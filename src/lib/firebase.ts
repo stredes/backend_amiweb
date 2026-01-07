@@ -1,0 +1,28 @@
+import admin from 'firebase-admin';
+import { env } from '../config/env';
+
+let app: admin.app.App | undefined;
+
+export function getFirebaseApp() {
+  if (!app) {
+    // IMPORTANT: In Vercel, multiline private keys are stored with \n.
+    const privateKey = env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+
+    app = admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: env.FIREBASE_PROJECT_ID,
+        clientEmail: env.FIREBASE_CLIENT_EMAIL,
+        privateKey
+      })
+    });
+  }
+
+  return app;
+}
+
+export const firestore = (() => {
+  getFirebaseApp();
+  return admin.firestore();
+})();
+
+export const FieldValue = admin.firestore.FieldValue;

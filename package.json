@@ -1,9 +1,12 @@
 {
   "name": "backend_amiweb",
   "version": "1.0.0",
+  "description": "Backend serverless API for AMIWEB e-commerce using Vercel Functions + Firebase Firestore",
   "private": true,
   "type": "commonjs",
-  "main": "index.js",
+  "engines": {
+    "node": ">=18.x"
+  },
   "scripts": {
     "dev": "npx vercel dev",
     "build": "tsc",

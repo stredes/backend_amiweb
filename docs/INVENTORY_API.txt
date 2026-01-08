@@ -228,7 +228,206 @@ ERROR 500 (Error del servidor):
 }
 
 ================================================================================
-CODIGO FRONTEND - PROCESAR EXCEL
+CODIGO FRONTEND - PROCESAR TU EXCEL ESPECIFICO
+================================================================================
+
+Instalar dependencia:
+npm install xlsx
+
+Codigo TypeScript para TU estructura de Excel:
+
+import * as XLSX from 'xlsx';
+
+interface Product {
+  sku?: string;
+  name: string;
+  slug: string;
+  categoryId: string;
+  brand: string;
+  shortDescription: string;
+  longDescription: string;
+  specs: Record<string, string>;
+  requiresInstallation: boolean;
+  isActive: boolean;
+  stock?: number;
+  price?: number;
+}
+
+function generateSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// PASO 1: Obtener mapeo de categorías
+async function getCategoryMapping(token: string): Promise<Record<string, string>> {
+  const response = await fetch(`${API_URL}/api/categories`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  
+  if (!response.ok) {
+    throw new Error('No se pudieron obtener las categorías');
+  }
+  
+  const result = await response.json();
+  const categories = result.data;
+  
+  // Crear mapeo de nombre a ID
+  const mapping: Record<string, string> = {};
+  categories.forEach((cat: any) => {
+    mapping[cat.name.toUpperCase()] = cat.id;
+  });
+  
+  return mapping;
+}
+
+// PASO 2: Procesar tu Excel específico
+async function parseYourExcelFile(file: File, categoryMapping: Record<string, string>): Promise<Product[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+        
+        const products: Product[] = jsonData.map((row: any) => {
+          const familia = row['Familia']?.toString().toUpperCase() || '';
+          const subfamilia = row['Subfamilia']?.toString() || '';
+          const codigo = row['Codigo']?.toString() || '';
+          const producto = row['Producto']?.toString() || '';
+          const stock = row['Saldo stock'] || 0;
+          
+          // Mapear familia a categoryId
+          const categoryId = categoryMapping[familia] || 'CATEGORIA_NO_ENCONTRADA';
+          
+          // Generar slug desde código o producto
+          const slug = generateSlug(codigo || producto);
+          
+          // Construir specs con todos los campos adicionales
+          const specs: Record<string, string> = {};
+          if (row['Codigo']) specs['Código'] = row['Codigo'].toString();
+          if (row['Familia']) specs['Familia'] = row['Familia'].toString();
+          if (row['Subfamilia']) specs['Subfamilia'] = row['Subfamilia'].toString();
+          if (row['Unidad']) specs['Unidad'] = row['Unidad'].toString();
+          if (row['Unidad de ne Bodega']) specs['Bodega'] = row['Unidad de ne Bodega'].toString();
+          if (row['Ubicación']) specs['Ubicación'] = row['Ubicación'].toString();
+          if (row['N° Serie']) specs['N° Serie'] = row['N° Serie'].toString();
+          if (row['Lote']) specs['Lote'] = row['Lote'].toString();
+          if (row['Fecha Vencin']) specs['Fecha Vencimiento'] = row['Fecha Vencin'].toString();
+          if (row['Por llegar']) specs['Por llegar'] = row['Por llegar'].toString();
+          if (row['Reserva']) specs['Reserva'] = row['Reserva'].toString();
+          
+          return {
+            sku: codigo,
+            name: producto,
+            slug: slug,
+            categoryId: categoryId,
+            brand: 'AMILAB', // Valor por defecto - cambiar si tienes el dato
+            shortDescription: producto || 'Sin descripción',
+            longDescription: `${producto}. Familia: ${familia}, Subfamilia: ${subfamilia}, Código: ${codigo}`,
+            specs: specs,
+            requiresInstallation: false,
+            isActive: true,
+            stock: parseInt(stock?.toString()) || 0,
+            price: undefined // No disponible en tu Excel
+          };
+        });
+        
+        resolve(products);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
+}
+
+// PASO 3: Flujo completo adaptado a tu Excel
+async function handleYourFileUpload(file: File) {
+  try {
+    // Obtener token
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('Usuario no autenticado');
+    }
+    const token = await user.getIdToken();
+    
+    // Obtener mapeo de categorías
+    console.log('Obteniendo categorías...');
+    const categoryMapping = await getCategoryMapping(token);
+    console.log('Mapeo de categorías:', categoryMapping);
+    
+    // Verificar que existan categorías
+    if (Object.keys(categoryMapping).length === 0) {
+      throw new Error('No hay categorías disponibles. Crea categorías primero.');
+    }
+    
+    // Procesar archivo
+    console.log('Procesando archivo...');
+    const products = await parseYourExcelFile(file, categoryMapping);
+    console.log(`${products.length} productos procesados`);
+    
+    // Detectar productos con categorías no encontradas
+    const withoutCategory = products.filter(p => p.categoryId === 'CATEGORIA_NO_ENCONTRADA');
+    if (withoutCategory.length > 0) {
+      const familias = [...new Set(withoutCategory.map(p => p.specs['Familia']))];
+      console.warn(`${withoutCategory.length} productos sin categoría. Familias no encontradas:`, familias);
+      
+      const continuar = confirm(
+        `Hay ${withoutCategory.length} productos con categorías no encontradas (${familias.join(', ')}).\n\n` +
+        `¿Deseas continuar de todas formas? (Fallarán al validarse)`
+      );
+      
+      if (!continuar) {
+        return;
+      }
+    }
+    
+    // Deduplicar por slug
+    const uniqueProducts = new Map();
+    const duplicates: string[] = [];
+    
+    products.forEach(product => {
+      if (uniqueProducts.has(product.slug)) {
+        duplicates.push(product.slug);
+      } else {
+        uniqueProducts.set(product.slug, product);
+      }
+    });
+    
+    const finalProducts = Array.from(uniqueProducts.values());
+    
+    if (duplicates.length > 0) {
+      console.warn(`${duplicates.length} duplicados removidos`);
+    }
+    
+    // Dividir en lotes de 200
+    const BATCH_SIZE = 200;
+    const batches: Product[][] = [];
+    
+    for (let i = 0; i < finalProducts.length; i += BATCH_SIZE) {
+      batches.push(finalProducts.slice(i, i + BATCH_SIZE));
+    }
+    
+    console.log(`Procesando ${batches.length} lotes...`);
+    
+    // Enviar lotes (reutilizar código de lotes con reintentos anterior)
+    // ... código de envío de lotes aquí ...
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
 ================================================================================
 
 Instalar dependencia:
@@ -500,6 +699,7 @@ FORMATO EXCEL RECOMENDADO
 
 El archivo Excel debe tener estas columnas (primera fila = encabezados):
 
+OPCION 1 - ESTRUCTURA COMPLETA:
 Columna A: Nombre
 Columna B: Slug
 Columna C: Categoria ID
@@ -510,6 +710,81 @@ Columna G: Especificaciones
 Columna H: Requiere Instalacion
 Columna I: Stock
 Columna J: Precio
+
+OPCION 2 - ESTRUCTURA DE TU EXCEL ACTUAL (mapeo requerido):
+Tu Excel tiene:
+- Familia → necesita mapearse a categoryId (requiere lookup de categorias)
+- Subfamilia → puede usarse para crear categorias anidadas
+- Codigo → puede usarse como sku o para generar slug
+- Producto → mapear a name
+- Unidad → puede incluirse en specs
+- Bodega → puede incluirse en specs o ubicación
+- Ubicación → puede incluirse en specs
+- N° Serie → puede incluirse en specs
+- Lote → puede incluirse en specs
+- Fecha Vencin → puede incluirse en specs
+- Por llegar → puede sumarse a stock futuro
+- Reserva → puede incluirse en specs
+- Saldo stock → mapear a stock
+
+CAMPOS FALTANTES EN TU EXCEL (requeridos por el backend):
+1. slug: se puede generar automáticamente desde "Codigo" o "Producto"
+2. categoryId: debe obtenerse mapeando "Familia" a IDs existentes
+3. brand (Marca): REQUERIDO - agregar columna o usar valor por defecto
+4. shortDescription: REQUERIDO - agregar columna o generar desde "Producto"
+5. longDescription: REQUERIDO - agregar columna o generar desde datos
+6. price (Precio): OPCIONAL - agregar si se desea
+
+EJEMPLO DE MAPEO EN FRONTEND:
+
+const mapExcelRowToProduct = (row: any, categoryMapping: Record<string, string>) => {
+  return {
+    sku: row['Codigo'],
+    name: row['Producto'],
+    slug: generateSlug(row['Codigo'] || row['Producto']),
+    categoryId: categoryMapping[row['Familia']] || 'default-category-id',
+    brand: row['Marca'] || 'AMILAB', // Valor por defecto si no existe
+    shortDescription: row['Producto'] || 'Sin descripción',
+    longDescription: `${row['Producto']}. Familia: ${row['Familia']}, Subfamilia: ${row['Subfamilia']}`,
+    specs: {
+      'Código': row['Codigo'],
+      'Familia': row['Familia'],
+      'Subfamilia': row['Subfamilia'],
+      'Unidad': row['Unidad'],
+      'Bodega': row['Bodega'],
+      'Ubicación': row['Ubicación'],
+      'N° Serie': row['N° Serie'],
+      'Lote': row['Lote'],
+      'Fecha Vencimiento': row['Fecha Vencin'],
+      'Por llegar': row['Por llegar'],
+      'Reserva': row['Reserva']
+    },
+    requiresInstallation: false,
+    isActive: true,
+    stock: parseInt(row['Saldo stock']) || 0,
+    price: undefined // No disponible en tu Excel
+  };
+};
+
+PASOS PARA ADAPTAR TU EXCEL:
+
+1. CREAR MAPEO DE CATEGORIAS:
+   Antes de cargar productos, necesitas:
+   a) Obtener todas las categorías existentes: GET /api/categories
+   b) Crear un objeto de mapeo: { "CORE": "cat_123", "LAB": "cat_456" }
+   c) Si no existe una categoría, crearla primero
+
+2. AGREGAR COLUMNA "MARCA" (o usar valor por defecto):
+   - Opción A: Agregar columna "Marca" en el Excel
+   - Opción B: Usar "AMILAB" como valor por defecto en el código
+
+3. GENERAR DESCRIPCIONES:
+   - shortDescription: Usar nombre del producto
+   - longDescription: Combinar varios campos (familia, subfamilia, código)
+
+4. PROCESAR CAMPOS ADICIONALES COMO SPECS:
+   - Todos los campos extra (ubicación, lote, etc.) van en "specs"
+   - Esto preserva la información sin cambiar el modelo
 
 EJEMPLO DE DATOS:
 
@@ -613,6 +888,46 @@ CONSIDERACIONES IMPORTANTES
    - Errores permanentes: slug duplicado, validación fallida
    - Solo reintentar errores con isTransient: true
    - Lógica recomendada: 1 reintento con backoff de 2-3 segundos
+
+11. TROUBLESHOOTING PARA TU ESTRUCTURA DE EXCEL
+
+PROBLEMA: "categoryId: El categoryId es requerido"
+SOLUCIÓN:
+- Primero crea las categorías en el sistema (una por cada "Familia")
+- Obtén el mapeo GET /api/categories
+- Mapea cada "Familia" del Excel a un categoryId existente
+- Ejemplo: { "CORE": "cat_abc123", "LAB": "cat_def456" }
+
+PROBLEMA: "brand: La marca es requerida"
+SOLUCIÓN:
+- Opción A: Agregar columna "Marca" en el Excel
+- Opción B: Usar valor por defecto "AMILAB" en el código de mapeo
+
+PROBLEMA: "shortDescription/longDescription requeridas"
+SOLUCIÓN:
+- Generar automáticamente desde el nombre del producto:
+  shortDescription: usar campo "Producto"
+  longDescription: combinar "Producto + Familia + Subfamilia + Código"
+
+PROBLEMA: Muchos productos con el mismo slug
+SOLUCIÓN:
+- El slug se genera desde "Codigo" o "Producto"
+- Si hay códigos duplicados, el frontend deduplica automáticamente
+- Revisar que los códigos en el Excel sean únicos
+
+PROBLEMA: Stock no numérico
+SOLUCIÓN:
+- El backend ahora convierte strings a números automáticamente
+- "10" -> 10, "10.5" -> 10 (redondea)
+- Si falla, verifica que "Saldo stock" contenga solo números
+
+CHECKLIST ANTES DE CARGAR:
+☐ Crear todas las categorías necesarias (basadas en "Familia")
+☐ Obtener mapeo de categorías desde el backend
+☐ Verificar que todos los "Codigo" sean únicos o permitir deduplicación
+☐ Decidir valor por defecto para "brand" (ej: "AMILAB")
+☐ Verificar que "Saldo stock" contenga solo números
+☐ Probar con un lote pequeño (10-20 productos) primero
 
 ================================================================================
 RESUMEN EJECUTIVO

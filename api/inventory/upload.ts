@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAuth } from '../../src/middleware/auth';
 import { enableCors, handleCorsPreFlight } from '../../src/middleware/cors';
 import { collectionRef, nowTimestamp } from '../../src/lib/firestore';
+import { firestore } from '../../src/lib/firebase';
 import { ok, fail } from '../../src/utils/responses';
 import { handleError } from '../../src/utils/errorHandler';
 import { inventoryUploadSchema } from '../../src/validation/inventorySchema';
@@ -94,7 +95,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (products.length > 500) {
-      return fail(res, 'Maximum 500 products per batch', 400);
+      return fail(res, 'Maximum 500 products per batch. Recommended: 200 for optimal performance', 400);
+    }
+
+    // Advertir si el lote es muy grande (mayor a 200)
+    if (products.length > 200) {
+      console.warn(`[INVENTORY UPLOAD] Large batch detected: ${products.length} products. Consider using batches of 200 for better performance`);
     }
 
     const results = {
@@ -102,27 +108,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       successful: 0,
       failed: 0,
       skipped: 0,
-      errors: [] as Array<{ index: number; name: string; error: string }>,
+      errors: [] as Array<{ index: number; name: string; error: string; isTransient?: boolean; slug?: string }>,
       createdIds: [] as string[]
     };
+
+    // Función helper para clasificar errores
+    const isTransientError = (error: any): boolean => {
+      const transientKeywords = [
+        'DEADLINE_EXCEEDED',
+        'UNAVAILABLE',
+        'timeout',
+        'network',
+        'connection',
+        'ECONNRESET',
+        'ETIMEDOUT'
+      ];
+      const errorMsg = error?.message || error?.toString() || '';
+      return transientKeywords.some(keyword => 
+        errorMsg.toLowerCase().includes(keyword.toLowerCase())
+      );
+    };
+
+    // OPTIMIZACIÓN: Obtener todos los productos existentes con los slugs relevantes en una sola query
+    const slugs = products.map(p => p.slug);
+    const existingProductsSnapshot = await collectionRef('products')
+      .where('slug', 'in', slugs.slice(0, 10)) // Firestore limit: 10 items in 'in' query
+      .get();
+
+    // Si hay más de 10 slugs, hacer queries adicionales en paralelo
+    const existingProductsMap = new Map<string, { id: string; createdAt: any }>();
+    
+    if (slugs.length <= 10) {
+      existingProductsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        existingProductsMap.set(data.slug, { id: doc.id, createdAt: data.createdAt });
+      });
+    } else {
+      // Dividir en chunks de 10 y hacer queries en paralelo
+      const chunks: string[][] = [];
+      for (let i = 0; i < slugs.length; i += 10) {
+        chunks.push(slugs.slice(i, i + 10));
+      }
+
+      const queryPromises = chunks.map(chunk =>
+        collectionRef('products')
+          .where('slug', 'in', chunk)
+          .get()
+      );
+
+      const results = await Promise.all(queryPromises);
+      results.forEach(snapshot => {
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          existingProductsMap.set(data.slug, { id: doc.id, createdAt: data.createdAt });
+        });
+      });
+    }
+
+    console.log(`[INVENTORY UPLOAD] Found ${existingProductsMap.size} existing products`);
+
+    // OPTIMIZACIÓN: Usar batch writes para operaciones atómicas (máximo 500 operaciones)
+    const batch = firestore.batch();
+    const now = nowTimestamp();
 
     // Procesar cada producto
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
       
       try {
-        // Verificar si ya existe por slug
-        const existingQuery = await collectionRef('products')
-          .where('slug', '==', product.slug)
-          .limit(1)
-          .get();
+        const existingProduct = existingProductsMap.get(product.slug);
 
-        if (!existingQuery.empty && !overwriteExisting) {
+        if (existingProduct && !overwriteExisting) {
           results.skipped++;
           results.errors.push({
             index: i,
             name: product.name,
-            error: 'Product with this slug already exists'
+            slug: product.slug,
+            error: 'Product with this slug already exists',
+            isTransient: false // Error permanente, no reintentar
           });
           continue;
         }
@@ -130,21 +193,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Crear o actualizar producto
         const productData = {
           ...product,
-          createdAt: overwriteExisting && !existingQuery.empty 
-            ? existingQuery.docs[0].data().createdAt 
-            : nowTimestamp(),
-          updatedAt: nowTimestamp()
+          createdAt: existingProduct ? existingProduct.createdAt : now,
+          updatedAt: now
         };
 
-        if (!existingQuery.empty && overwriteExisting) {
-          // Actualizar existente
-          const docId = existingQuery.docs[0].id;
-          await collectionRef('products').doc(docId).update(productData);
-          results.createdIds.push(docId);
+        if (existingProduct) {
+          // Actualizar existente en el batch
+          const docRef = collectionRef('products').doc(existingProduct.id);
+          batch.update(docRef, productData);
+          results.createdIds.push(existingProduct.id);
         } else {
-          // Crear nuevo
+          // Crear nuevo en el batch
           const docRef = collectionRef('products').doc();
-          await docRef.set(productData);
+          batch.set(docRef, productData);
           results.createdIds.push(docRef.id);
         }
 
@@ -152,21 +213,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       } catch (error) {
         results.failed++;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         results.errors.push({
           index: i,
           name: product.name,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          slug: product.slug,
+          error: errorMessage,
+          isTransient: isTransientError(error) // Marcar si es transitorio
         });
+        console.error(`[INVENTORY UPLOAD] Error processing product ${i} (${product.slug}):`, errorMessage);
+      }
+    }
+
+    // OPTIMIZACIÓN: Commit todas las operaciones de una vez
+    if (results.successful > 0) {
+      try {
+        await batch.commit();
+        console.log(`[INVENTORY UPLOAD] Batch committed successfully with ${results.successful} operations`);
+      } catch (error) {
+        console.error(`[INVENTORY UPLOAD] Batch commit failed:`, error);
+        return fail(res, 'Failed to commit batch operations', 500);
       }
     }
 
     // Log de resultados finales
+    const transientErrors = results.errors.filter(e => e.isTransient).length;
+    const permanentErrors = results.errors.filter(e => !e.isTransient).length;
+    
     console.log(`[INVENTORY UPLOAD] Batch completed:`, {
       origin: req.headers.origin || 'unknown',
       totalProcessed: results.totalProcessed,
       successful: results.successful,
       failed: results.failed,
       skipped: results.skipped,
+      transientErrors,
+      permanentErrors,
       timestamp: new Date().toISOString()
     });
 

@@ -9,7 +9,6 @@
   },
   "scripts": {
     "dev": "npx vercel dev",
-    "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "echo 'Add lint if needed.'"
   },

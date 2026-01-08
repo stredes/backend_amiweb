@@ -1,0 +1,505 @@
+================================================================================
+API DE CARGA DE INVENTARIO - DOCUMENTACION COMPLETA
+================================================================================
+
+RESPUESTAS A TUS PREGUNTAS:
+
+1. ENDPOINT DEL BACKEND
+   POST /api/inventory/upload
+
+2. QUE ESPERA EL BACKEND
+   JSON (NO multipart/form-data)
+   
+   El frontend debe procesar el archivo Excel/CSV localmente y enviar JSON:
+   
+   {
+     "products": [
+       {
+         "name": "Producto",
+         "slug": "producto-slug",
+         "categoryId": "cat_id",
+         "brand": "Marca",
+         "shortDescription": "Descripcion corta",
+         "longDescription": "Descripcion larga",
+         "specs": { "key": "value" },
+         "requiresInstallation": false,
+         "isActive": true,
+         "stock": 10,
+         "price": 1000
+       }
+     ],
+     "overwriteExisting": false
+   }
+
+3. QUE DEVUELVE EL BACKEND
+   {
+     "success": true,
+     "data": {
+       "totalProcessed": 100,
+       "successful": 95,
+       "failed": 3,
+       "skipped": 2,
+       "errors": [
+         { "index": 5, "name": "Producto", "error": "mensaje de error" }
+       ],
+       "createdIds": ["id1", "id2", "id3"]
+     }
+   }
+
+4. FLUJO EXACTO
+   Paso 1: Usuario selecciona archivo Excel/CSV en el frontend
+   Paso 2: Frontend lee el archivo con libreria SheetJS (xlsx)
+   Paso 3: Frontend convierte el Excel a JSON con el formato esperado
+   Paso 4: Frontend valida datos basicos (campos requeridos, formatos)
+   Paso 5: Frontend envia JSON al backend via POST con token de auth
+   Paso 6: Backend valida el token de Firebase Auth
+   Paso 7: Backend verifica que el usuario sea admin
+   Paso 8: Backend procesa cada producto y lo guarda en Firestore
+   Paso 9: Backend devuelve resumen con exitosos, fallidos y errores
+   Paso 10: Frontend muestra resultado al usuario con toast o modal
+
+5. AUTENTICACION
+   Header requerido:
+   Authorization: Bearer <firebase-id-token>
+   
+   Como obtener el token en el frontend:
+   const user = auth.currentUser;
+   const token = await user.getIdToken();
+
+================================================================================
+ESPECIFICACIONES TECNICAS
+================================================================================
+
+URL COMPLETA:
+https://backend-amiweb-5udc-ksr25rpkq.vercel.app/api/inventory/upload
+
+METODO HTTP:
+POST
+
+HEADERS REQUERIDOS:
+Content-Type: application/json
+Authorization: Bearer <token>
+
+AUTENTICACION:
+Si, requiere token de Firebase Auth con rol admin
+
+LIMITE DE PRODUCTOS:
+Maximo 500 productos por request
+
+VALIDACIONES:
+- name: minimo 2 caracteres
+- slug: minimo 2 caracteres, debe ser unico
+- categoryId: debe existir en la coleccion categories de Firestore
+- brand: minimo 1 caracter
+- stock: numero entero mayor o igual a 0 (opcional)
+- price: numero positivo (opcional)
+
+CAMPOS DEL PRODUCTO:
+- sku: string (opcional)
+- name: string (requerido, min 2 chars)
+- slug: string (requerido, min 2 chars, unico)
+- categoryId: string (requerido)
+- brand: string (requerido, min 1 char)
+- shortDescription: string (requerido, min 2 chars)
+- longDescription: string (requerido, min 2 chars)
+- specs: objeto clave-valor (opcional, default {})
+- requiresInstallation: boolean (opcional, default false)
+- isActive: boolean (opcional, default true)
+- stock: number (opcional)
+- price: number (opcional)
+
+PARAMETRO OVERWRITE:
+overwriteExisting: boolean
+- false: omite productos con slug duplicado
+- true: actualiza productos existentes con el mismo slug
+
+================================================================================
+RESPUESTAS DEL BACKEND
+================================================================================
+
+EXITO (201 Created):
+{
+  "success": true,
+  "data": {
+    "totalProcessed": 100,
+    "successful": 95,
+    "failed": 3,
+    "skipped": 2,
+    "errors": [
+      {
+        "index": 5,
+        "name": "Producto con error",
+        "error": "Product with this slug already exists"
+      }
+    ],
+    "createdIds": ["prod_abc123", "prod_def456"]
+  }
+}
+
+ERROR 401 (No autenticado):
+{
+  "success": false,
+  "error": "No authorization token provided"
+}
+
+ERROR 403 (No autorizado):
+{
+  "success": false,
+  "error": "Admin access required"
+}
+
+ERROR 400 (Datos invalidos):
+{
+  "success": false,
+  "error": "Invalid payload: products must contain at least 1 item"
+}
+
+ERROR 400 (Limite excedido):
+{
+  "success": false,
+  "error": "Maximum 500 products per batch"
+}
+
+ERROR 500 (Error del servidor):
+{
+  "success": false,
+  "error": "Unexpected error"
+}
+
+================================================================================
+CODIGO FRONTEND - PROCESAR EXCEL
+================================================================================
+
+Instalar dependencia:
+npm install xlsx
+
+Codigo TypeScript:
+
+import * as XLSX from 'xlsx';
+
+interface Product {
+  name: string;
+  slug: string;
+  categoryId: string;
+  brand: string;
+  shortDescription: string;
+  longDescription: string;
+  specs: Record<string, string>;
+  requiresInstallation: boolean;
+  isActive: boolean;
+  stock?: number;
+  price?: number;
+}
+
+function generateSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function parseSpecs(specsString: string): Record<string, string> {
+  if (!specsString) return {};
+  
+  const specs: Record<string, string> = {};
+  const pairs = specsString.split(';');
+  
+  pairs.forEach(pair => {
+    const [key, value] = pair.split(':');
+    if (key && value) {
+      specs[key.trim()] = value.trim();
+    }
+  });
+  
+  return specs;
+}
+
+async function parseExcelFile(file: File): Promise<Product[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+        
+        const products: Product[] = jsonData.map((row: any) => ({
+          name: row['Nombre'] || row['name'],
+          slug: row['Slug'] || generateSlug(row['Nombre'] || row['name']),
+          categoryId: row['Categoria ID'] || row['categoryId'],
+          brand: row['Marca'] || row['brand'],
+          shortDescription: row['Descripcion Corta'] || row['shortDescription'] || '',
+          longDescription: row['Descripcion'] || row['longDescription'] || '',
+          specs: parseSpecs(row['Especificaciones'] || ''),
+          requiresInstallation: (row['Requiere Instalacion'] || '').toLowerCase() === 'si',
+          isActive: true,
+          stock: parseInt(row['Stock']) || undefined,
+          price: parseFloat(row['Precio']) || undefined
+        }));
+        
+        resolve(products);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
+}
+
+================================================================================
+CODIGO FRONTEND - ENVIAR AL BACKEND
+================================================================================
+
+const API_URL = 'https://backend-amiweb-5udc-ksr25rpkq.vercel.app';
+
+interface UploadResult {
+  success: boolean;
+  data: {
+    totalProcessed: number;
+    successful: number;
+    failed: number;
+    skipped: number;
+    errors: Array<{ index: number; name: string; error: string }>;
+    createdIds: string[];
+  };
+}
+
+async function uploadInventory(
+  products: Product[], 
+  token: string,
+  overwrite: boolean = false
+): Promise<UploadResult> {
+  const response = await fetch(`${API_URL}/api/inventory/upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      products,
+      overwriteExisting: overwrite
+    })
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Error al subir inventario');
+  }
+  
+  return response.json();
+}
+
+================================================================================
+CODIGO FRONTEND - FLUJO COMPLETO
+================================================================================
+
+async function handleFileUpload(file: File) {
+  try {
+    // Paso 1: Obtener token de autenticacion
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('Usuario no autenticado');
+    }
+    const token = await user.getIdToken();
+    
+    // Paso 2: Procesar archivo Excel
+    console.log('Procesando archivo...');
+    const products = await parseExcelFile(file);
+    console.log(`${products.length} productos encontrados`);
+    
+    // Paso 3: Validar que hay productos
+    if (products.length === 0) {
+      throw new Error('El archivo no contiene productos');
+    }
+    
+    if (products.length > 500) {
+      throw new Error('Maximo 500 productos por carga');
+    }
+    
+    // Paso 4: Enviar al backend
+    console.log('Subiendo productos...');
+    const result = await uploadInventory(products, token, false);
+    
+    // Paso 5: Mostrar resultados
+    console.log('Resultados:');
+    console.log(`Total procesados: ${result.data.totalProcessed}`);
+    console.log(`Exitosos: ${result.data.successful}`);
+    console.log(`Fallidos: ${result.data.failed}`);
+    console.log(`Omitidos: ${result.data.skipped}`);
+    
+    if (result.data.errors.length > 0) {
+      console.log('Errores:', result.data.errors);
+    }
+    
+    // Mostrar notificacion al usuario
+    alert(`Inventario cargado!\n
+Exitosos: ${result.data.successful}
+Fallidos: ${result.data.failed}
+Omitidos: ${result.data.skipped}`);
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
+// Uso en un componente
+function InventoryUploader() {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+  
+  return (
+    <input 
+      type="file" 
+      accept=".xlsx,.xls,.csv" 
+      onChange={handleChange}
+    />
+  );
+}
+
+================================================================================
+FORMATO EXCEL RECOMENDADO
+================================================================================
+
+El archivo Excel debe tener estas columnas (primera fila = encabezados):
+
+Columna A: Nombre
+Columna B: Slug
+Columna C: Categoria ID
+Columna D: Marca
+Columna E: Descripcion Corta
+Columna F: Descripcion
+Columna G: Especificaciones
+Columna H: Requiere Instalacion
+Columna I: Stock
+Columna J: Precio
+
+EJEMPLO DE DATOS:
+
+Nombre                | Slug                  | Categoria ID | Marca    | ...
+Microscopio Digital   | microscopio-digital   | cat_123      | Olympus  | ...
+Balanza Analitica     | balanza-analitica     | cat_456      | Mettler  | ...
+
+NOTAS IMPORTANTES:
+- Slug: debe ser URL-friendly (sin espacios, caracteres especiales)
+- Categoria ID: debe existir previamente en Firestore
+- Especificaciones: formato "clave:valor;clave2:valor2"
+- Requiere Instalacion: escribir "Si" o "No"
+- Stock y Precio: son opcionales, dejar en blanco si no aplica
+
+================================================================================
+TESTING CON CURL
+================================================================================
+
+curl -X POST https://backend-amiweb-5udc-ksr25rpkq.vercel.app/api/inventory/upload \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TU_TOKEN_AQUI" \
+  -d '{
+    "products": [
+      {
+        "name": "Producto de Prueba",
+        "slug": "producto-prueba",
+        "categoryId": "ID_DE_CATEGORIA_EXISTENTE",
+        "brand": "Marca de Prueba",
+        "shortDescription": "Descripcion corta de prueba",
+        "longDescription": "Esta es una descripcion larga de prueba",
+        "specs": {
+          "Peso": "1kg",
+          "Color": "Blanco"
+        },
+        "requiresInstallation": false,
+        "isActive": true,
+        "stock": 5,
+        "price": 10000
+      }
+    ],
+    "overwriteExisting": false
+  }'
+
+================================================================================
+CONSIDERACIONES IMPORTANTES
+================================================================================
+
+1. LIMITE DE PRODUCTOS
+   - Maximo 500 productos por request
+   - Para inventarios grandes, dividir en multiples requests
+   - Implementar logica de paginacion si es necesario
+
+2. TIMEOUT
+   - Vercel tiene limite de 10 segundos para plan Hobby
+   - Requests muy grandes pueden hacer timeout
+   - Considerar procesar en batches mas pequenos
+
+3. SLUGS DUPLICADOS
+   - Por defecto se omiten productos con slug duplicado
+   - Usar overwriteExisting: true para actualizar existentes
+   - El slug debe ser unico en toda la coleccion
+
+4. CATEGORIAS
+   - El categoryId debe existir en Firestore antes de subir productos
+   - Validar categorias antes de procesar el archivo
+   - Crear endpoint GET /api/categories para obtener IDs validos
+
+5. AUTENTICACION
+   - El token expira cada 1 hora
+   - Renovar token antes de hacer request si es necesario
+   - Manejar errores 401 y solicitar reautenticacion
+
+6. RATE LIMITING
+   - No hay rate limiting configurado actualmente
+   - Considerar implementar en el futuro
+   - Por ahora, ser responsable con la frecuencia de requests
+
+7. VALIDACION EN FRONTEND
+   - Validar datos antes de enviar al backend
+   - Mostrar errores de validacion al usuario
+   - Evitar enviar datos invalidos para no desperdiciar quota
+
+8. MANEJO DE ERRORES
+   - El backend devuelve errores detallados por producto
+   - Mostrar errores al usuario de forma clara
+   - Permitir reintentar solo productos fallidos
+
+================================================================================
+RESUMEN EJECUTIVO
+================================================================================
+
+ENDPOINT:
+POST https://backend-amiweb-5udc-ksr25rpkq.vercel.app/api/inventory/upload
+
+AUTENTICACION:
+Header: Authorization: Bearer <firebase-id-token>
+Rol requerido: admin
+
+ENTRADA:
+JSON con array de productos (max 500)
+
+SALIDA:
+JSON con resumen de procesamiento (exitosos, fallidos, errores)
+
+FLUJO:
+1. Usuario selecciona Excel/CSV
+2. Frontend procesa archivo localmente
+3. Frontend envia JSON al backend
+4. Backend guarda en Firestore
+5. Frontend muestra resultados
+
+NOTAS:
+- No se usa multipart/form-data
+- El procesamiento de Excel es en el frontend
+- El backend solo recibe y guarda JSON
+- Validacion completa en ambos lados
+
+================================================================================
+FIN DE LA DOCUMENTACION
+================================================================================

@@ -32,8 +32,15 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
       contact: {
         list: 'GET /api/contact-messages',
         create: 'POST /api/contact-messages'
+      },
+      inventory: {
+        upload: 'POST /api/inventory/upload (requires auth)'
       }
     },
-    documentation: 'https://github.com/stredes/backend_amiweb#readme'
+    documentation: 'https://github.com/stredes/backend_amiweb#readme',
+    authRequired: {
+      note: 'Endpoints POST/PUT/PATCH/DELETE require Firebase Auth token',
+      header: 'Authorization: Bearer <token>'
+    }
   });
 }

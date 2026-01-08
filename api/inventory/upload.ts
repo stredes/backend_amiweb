@@ -5,7 +5,7 @@ import { collectionRef, nowTimestamp } from '../../src/lib/firestore';
 import { firestore } from '../../src/lib/firebase';
 import { ok, fail } from '../../src/utils/responses';
 import { handleError } from '../../src/utils/errorHandler';
-import { inventoryUploadSchema } from '../../src/validation/inventorySchema';
+import { inventoryItemSchema } from '../../src/validation/inventorySchema';
 
 /**
  * POST /api/inventory/upload
@@ -74,13 +74,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return; // requireAuth ya envió la respuesta
     }
 
-    // Validar datos
-    const parsed = inventoryUploadSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return fail(res, `Invalid payload: ${parsed.error.message}`, 400);
+    // Validar estructura básica del payload
+    if (!req.body || typeof req.body !== 'object') {
+      return fail(res, 'Invalid payload: body must be a JSON object', 400);
     }
 
-    const { products, overwriteExisting } = parsed.data;
+    if (!Array.isArray(req.body.products)) {
+      return fail(res, 'Invalid payload: products must be an array', 400);
+    }
+
+    // Validar cada producto individualmente para dar feedback específico
+    const validationErrors: Array<{ index: number; name: string; errors: string[] }> = [];
+    const validProducts: any[] = [];
+
+    req.body.products.forEach((product: any, index: number) => {
+      const result = inventoryItemSchema.safeParse(product);
+      
+      if (!result.success) {
+        const fieldErrors = result.error.issues.map(issue => {
+          const field = issue.path.join('.');
+          return `${field}: ${issue.message}`;
+        });
+        
+        validationErrors.push({
+          index: index + 1, // +1 para que coincida con fila del Excel (header = fila 1)
+          name: product?.name || 'Sin nombre',
+          errors: fieldErrors
+        });
+      } else {
+        validProducts.push(result.data);
+      }
+    });
+
+    // Si hay errores de validación, devolverlos
+    if (validationErrors.length > 0) {
+      const errorMessage = validationErrors.slice(0, 10).map(err => 
+        `Fila ${err.index} (${err.name}): ${err.errors.join(', ')}`
+      ).join('\n');
+
+      const additionalErrors = validationErrors.length > 10 
+        ? `\n... y ${validationErrors.length - 10} errores más.` 
+        : '';
+
+      console.error(`[INVENTORY UPLOAD] Validation errors:`, validationErrors);
+
+      return fail(res, `Errores de validación encontrados:\n${errorMessage}${additionalErrors}`, 400);
+    }
+
+    // Si no hay productos válidos después de validar
+    if (validProducts.length === 0) {
+      return fail(res, 'No hay productos válidos para procesar', 400);
+    }
+
+    const products = validProducts;
+    const overwriteExisting = req.body.overwriteExisting ?? false;
 
     // Log de parámetros recibidos
     console.log(`[INVENTORY UPLOAD] Processing batch:`, {

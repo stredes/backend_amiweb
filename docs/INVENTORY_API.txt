@@ -112,12 +112,22 @@ OPTIMIZACIONES IMPLEMENTADAS:
 - Reduccion de Latencia: Hasta 100x mas rapido que el procesamiento secuencial
 
 VALIDACIONES:
-- name: minimo 2 caracteres
-- slug: minimo 2 caracteres, debe ser unico
-- categoryId: debe existir en la coleccion categories de Firestore
-- brand: minimo 1 caracter
-- stock: numero entero mayor o igual a 0 (opcional)
-- price: numero positivo (opcional)
+- name: minimo 2 caracteres, maximo 200
+- slug: minimo 2 caracteres, maximo 200, debe ser unico
+- categoryId: requerido, debe existir en la coleccion categories de Firestore
+- brand: minimo 1 caracter, maximo 100
+- shortDescription: minimo 2 caracteres, maximo 500
+- longDescription: minimo 2 caracteres, maximo 5000
+- stock: numero entero >= 0 (opcional, acepta strings y los convierte)
+- price: numero positivo (opcional, acepta strings y los convierte)
+- requiresInstallation: boolean (acepta: true/false, "si"/"no", "yes", "1"/"0")
+- isActive: boolean (acepta: true/false, "si"/"no", "1"/"0", default: true)
+
+COERCION DE TIPOS (automática):
+- stock: "10" -> 10, "10.5" -> 10 (redondea hacia abajo)
+- price: "99.99" -> 99.99
+- requiresInstallation: "si" -> true, "no" -> false
+- isActive: "true" -> true, "false" -> false
 
 CAMPOS DEL PRODUCTO:
 - sku: string (opcional)
@@ -192,6 +202,18 @@ ERROR 400 (Datos invalidos):
   "success": false,
   "error": "Invalid payload: products must contain at least 1 item"
 }
+
+ERROR 400 (Validacion fallida - con detalles):
+{
+  "success": false,
+  "error": "Errores de validación encontrados:\nFila 2 (Producto A): name: El nombre debe tener al menos 2 caracteres\nFila 3 (Producto B): slug: El slug debe tener al menos 2 caracteres, categoryId: El categoryId es requerido\n... y 10 errores más."
+}
+
+NOTA: Los errores de validacion muestran:
+- Numero de fila (coincide con Excel, fila 1 = header)
+- Nombre del producto (si existe)
+- Campo(s) especifico(s) con error
+- Mensaje descriptivo de cada error
 
 ERROR 400 (Limite excedido):
 {

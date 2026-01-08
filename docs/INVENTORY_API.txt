@@ -66,6 +66,17 @@ RESPUESTAS A TUS PREGUNTAS:
    const user = auth.currentUser;
    const token = await user.getIdToken();
 
+6. LOGS DEL BACKEND
+   El backend registra informacion sobre cada request del frontend:
+   - Origen de la peticion (URL del frontend)
+   - User-Agent del navegador
+   - Timestamp de la operacion
+   - Cantidad de productos procesados
+   - Resultados (exitosos, fallidos, omitidos)
+   
+   Esto permite rastrear y diagnosticar problemas de conexion
+   entre el frontend y el backend.
+
 ================================================================================
 ESPECIFICACIONES TECNICAS
 ================================================================================
@@ -469,6 +480,12 @@ CONSIDERACIONES IMPORTANTES
    - El backend devuelve errores detallados por producto
    - Mostrar errores al usuario de forma clara
    - Permitir reintentar solo productos fallidos
+
+9. LOGS Y MONITOREO
+   - Todas las peticiones se registran con el origen del frontend
+   - Los logs incluyen timestamps, origen, y resultados
+   - Consultar logs en Vercel Dashboard para diagnostico
+   - Headers importantes: Origin, User-Agent, Authorization
 
 ================================================================================
 RESUMEN EJECUTIVO

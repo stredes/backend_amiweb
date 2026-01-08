@@ -27,7 +27,7 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
         list: 'GET /api/support-requests',
         get: 'GET /api/support-requests/{id}',
         create: 'POST /api/support-requests',
-        updateStatus: 'PATCH /api/support-requests/{id}/status'
+        updateStatus: 'PATCH /api/support-requests/{id} (body: {status: "pendiente"|"en-proceso"|"resuelto"})'
       },
       contact: {
         list: 'GET /api/contact-messages',

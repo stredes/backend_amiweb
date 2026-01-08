@@ -53,6 +53,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Log de conexión desde el frontend
+    const origin = req.headers.origin || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    console.log(`[INVENTORY UPLOAD] Request from frontend:`, {
+      origin,
+      userAgent,
+      timestamp: new Date().toISOString(),
+      method: req.method
+    });
+
     if (req.method !== 'POST') {
       return fail(res, 'Method not allowed', 405);
     }
@@ -70,6 +80,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { products, overwriteExisting } = parsed.data;
+
+    // Log de parámetros recibidos
+    console.log(`[INVENTORY UPLOAD] Processing batch:`, {
+      origin: req.headers.origin || 'unknown',
+      productsCount: products.length,
+      overwriteExisting,
+      timestamp: new Date().toISOString()
+    });
 
     if (products.length === 0) {
       return fail(res, 'No products to process', 400);
@@ -141,6 +159,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
     }
+
+    // Log de resultados finales
+    console.log(`[INVENTORY UPLOAD] Batch completed:`, {
+      origin: req.headers.origin || 'unknown',
+      totalProcessed: results.totalProcessed,
+      successful: results.successful,
+      failed: results.failed,
+      skipped: results.skipped,
+      timestamp: new Date().toISOString()
+    });
 
     return ok(res, results, 201);
 

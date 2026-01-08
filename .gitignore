@@ -10,6 +10,9 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 
+# Firebase service account (contiene credenciales sensibles)
+serviceAccountKey.json
+
 # Vercel
 .vercel
 .vercel.json

@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "npx vercel dev",
     "type-check": "tsc --noEmit",
-    "lint": "echo 'Add lint if needed.'"
+    "lint": "echo 'Add lint if needed.'",
+    "create-users": "ts-node scripts/create-firebase-users.ts",
+    "init-firestore": "ts-node scripts/init-firestore.ts"
   },
   "dependencies": {
     "@vercel/node": "^3.2.3",

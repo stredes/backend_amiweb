@@ -110,6 +110,14 @@ OPTIMIZACIONES IMPLEMENTADAS:
 - Verificacion en Memoria: Se obtienen todos los productos existentes de una vez
 - Commit Unico: Todas las escrituras se confirman en una sola operacion
 - Reduccion de Latencia: Hasta 100x mas rapido que el procesamiento secuencial
+- Generacion Automatica de Slugs Unicos: Si detecta duplicados, agrega sufijo numerico (-1, -2, etc.)
+
+MANEJO DE SLUGS DUPLICADOS:
+- El backend detecta slugs duplicados automaticamente
+- Si overwriteExisting = false: genera slug unico con sufijo numerico
+  Ejemplo: "producto-1" ya existe -> crea "producto-1-1", "producto-1-2", etc.
+- Si overwriteExisting = true: actualiza el producto existente con ese slug
+- El frontend puede confiar en que todos los productos se procesaran sin error de duplicados
 
 VALIDACIONES:
 - name: minimo 2 caracteres, maximo 200
@@ -911,9 +919,14 @@ SOLUCIÓN:
 
 PROBLEMA: Muchos productos con el mismo slug
 SOLUCIÓN:
-- El slug se genera desde "Codigo" o "Producto"
-- Si hay códigos duplicados, el frontend deduplica automáticamente
-- Revisar que los códigos en el Excel sean únicos
+- El backend ahora genera slugs únicos automáticamente
+- Si "producto-123" ya existe, crea "producto-123-1", "producto-123-2", etc.
+- No necesitas preocuparte por duplicados en el frontend
+- Si quieres actualizar productos existentes, marca "overwriteExisting: true"
+
+RECOMENDACIÓN: Para mejor control, genera slugs únicos en el frontend usando:
+  slug = generateSlug(`${codigo}-${producto}`)
+Esto evita que el backend tenga que agregar sufijos numéricos.
 
 PROBLEMA: Stock no numérico
 SOLUCIÓN:

@@ -214,6 +214,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[INVENTORY UPLOAD] Found ${existingProductsMap.size} existing products`);
 
+    // Helper: Generar slug único si hay duplicados
+    const generateUniqueSlug = (baseSlug: string, existingSlugs: Set<string>): string => {
+      let slug = baseSlug;
+      let counter = 1;
+      
+      while (existingSlugs.has(slug)) {
+        slug = `${baseSlug}-${counter}`;
+        counter++;
+      }
+      
+      return slug;
+    };
+
+    // Rastrear slugs que vamos a usar en este batch
+    const usedSlugs = new Set<string>(existingProductsMap.keys());
+
     // OPTIMIZACIÓN: Usar batch writes para operaciones atómicas (máximo 500 operaciones)
     const batch = firestore.batch();
     const now = nowTimestamp();
@@ -223,23 +239,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const product = products[i];
       
       try {
-        const existingProduct = existingProductsMap.get(product.slug);
+        // Generar slug único si el actual está duplicado
+        let finalSlug = product.slug;
+        
+        if (usedSlugs.has(finalSlug) && !overwriteExisting) {
+          finalSlug = generateUniqueSlug(product.slug, usedSlugs);
+          console.log(`[INVENTORY UPLOAD] Slug duplicado detectado, ajustado: ${product.slug} -> ${finalSlug}`);
+        }
+        
+        usedSlugs.add(finalSlug);
+        
+        const existingProduct = existingProductsMap.get(finalSlug);
 
         if (existingProduct && !overwriteExisting) {
           results.skipped++;
           results.errors.push({
             index: i,
             name: product.name,
-            slug: product.slug,
+            slug: finalSlug,
             error: 'Product with this slug already exists',
             isTransient: false // Error permanente, no reintentar
           });
           continue;
         }
 
-        // Crear o actualizar producto
+        // Crear o actualizar producto con slug final
         const productData = {
           ...product,
+          slug: finalSlug, // Usar slug único generado
           createdAt: existingProduct ? existingProduct.createdAt : now,
           updatedAt: now
         };
@@ -264,7 +291,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results.errors.push({
           index: i,
           name: product.name,
-          slug: product.slug,
+          slug: product.slug, // Usar slug original en error para identificación
           error: errorMessage,
           isTransient: isTransientError(error) // Marcar si es transitorio
         });

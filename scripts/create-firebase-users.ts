@@ -72,10 +72,38 @@ const users = [
     disabled: false
   },
   {
+    email: 'bodega@amilab.com',
+    password: 'bodega123',
+    displayName: 'Usuario de Bodega',
+    role: 'bodega',
+    disabled: false
+  },
+  {
+    email: 'bodega1@amilab.com',
+    password: 'bodega123',
+    displayName: 'Bodeguero 1',
+    role: 'bodega',
+    disabled: false
+  },
+  {
+    email: 'bodega2@amilab.com',
+    password: 'bodega123',
+    displayName: 'Bodeguero 2',
+    role: 'bodega',
+    disabled: false
+  },
+  {
     email: 'socio@amilab.com',
     password: 'demo123',
     displayName: 'Socio Demo',
     role: 'socio',
+    disabled: false
+  },
+  {
+    email: 'cliente@amilab.com',
+    password: 'cliente123',
+    displayName: 'Cliente Demo',
+    role: 'cliente',
     disabled: false
   }
 ];

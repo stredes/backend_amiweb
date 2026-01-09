@@ -4,10 +4,16 @@ import { ok } from '../src/utils/responses';
 import { createRequestLogger } from '../src/middleware/requestLogger';
 import { logger } from '../src/utils/logger';
 import { getConnectionInfo } from '../src/middleware/connectionTracker';
+import { enableCors, handleCorsPreFlight } from '../src/middleware/cors';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
-  
+
+  enableCors(req, res);
+  if (handleCorsPreFlight(req, res)) {
+    return;
+  }
+
   logger.debug('Health check realizado');
   
   const connectionInfo = getConnectionInfo();

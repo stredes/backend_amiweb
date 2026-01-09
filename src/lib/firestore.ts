@@ -1,5 +1,7 @@
 import { firestore, FieldValue } from './firebase';
 
+export { FieldValue };
+
 export const timestamps = {
   createdAt: FieldValue.serverTimestamp(),
   updatedAt: FieldValue.serverTimestamp()

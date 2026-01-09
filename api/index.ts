@@ -26,7 +26,6 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
     connectedOrigins: connectionInfo.connectedOrigins,
     endpoints: {
       health: '/api/health',
-      connections: '/api/connections',
       metadata: '/api/metadata',
       categories: {
         list: 'GET /api/categories',

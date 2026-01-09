@@ -1,31 +1,27 @@
 import type { VercelResponse } from '@vercel/node';
 import { fail } from './responses';
+import { logger } from './logger';
 
-interface ErrorLog {
-  timestamp: string;
-  endpoint: string;
-  method: string;
-  error: string;
-  stack?: string;
+interface ErrorContext {
+  endpoint?: string;
+  method?: string;
   userId?: string;
+  [key: string]: any;
 }
 
 /**
- * Logger estructurado de errores
+ * Logger estructurado de errores (legacy wrapper)
  */
-export function logError(error: unknown, context: Partial<ErrorLog>): void {
-  const errorLog: ErrorLog = {
-    timestamp: new Date().toISOString(),
-    endpoint: context.endpoint || 'unknown',
-    method: context.method || 'unknown',
-    error: error instanceof Error ? error.message : String(error),
-    stack: error instanceof Error ? error.stack : undefined,
-    userId: context.userId
-  };
-
-  // En producción, esto debería ir a un servicio como Sentry
-  // eslint-disable-next-line no-console
-  console.error('[ERROR]', JSON.stringify(errorLog));
+export function logError(error: unknown, context: ErrorContext = {}): void {
+  logger.error(
+    `Error en ${context.endpoint || 'endpoint desconocido'}`,
+    error,
+    {
+      method: context.method,
+      userId: context.userId,
+      ...context
+    }
+  );
 }
 
 /**
@@ -34,16 +30,18 @@ export function logError(error: unknown, context: Partial<ErrorLog>): void {
 export function handleError(
   error: unknown,
   res: VercelResponse,
-  context: Partial<ErrorLog>
+  context: ErrorContext = {}
 ): VercelResponse {
   logError(error, context);
 
   // Errores conocidos vs desconocidos
   if (error instanceof Error) {
     if (error.message.includes('not found')) {
+      logger.warn('Recurso no encontrado', { endpoint: context.endpoint });
       return fail(res, 'Resource not found', 404);
     }
     if (error.message.includes('permission')) {
+      logger.warn('Permiso denegado', { userId: context.userId, endpoint: context.endpoint });
       return fail(res, 'Permission denied', 403);
     }
   }

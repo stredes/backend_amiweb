@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función helper para verificar autenticación
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Función helper para verificar roles
+    function hasRole(role) {
+      return isAuthenticated() && 
+             request.auth.token.role == role;
+    }
+    
+    // Función helper para admin o root
+    function isAdmin() {
+      return hasRole('admin') || hasRole('root');
+    }
+    
+    // ==========================================
+    // PRODUCTOS - Lectura pública, escritura admin
+    // ==========================================
+    match /products/{productId} {
+      // ✅ LECTURA PÚBLICA - Cualquiera puede ver productos
+      allow read: if true;
+      
+      // ✅ ESCRITURA SOLO ADMIN/ROOT
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // CATEGORÍAS - Lectura pública, escritura admin
+    // ==========================================
+    match /categories/{categoryId} {
+      // ✅ LECTURA PÚBLICA - Cualquiera puede ver categorías
+      allow read: if true;
+      
+      // ✅ ESCRITURA SOLO ADMIN/ROOT
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // METADATA - Lectura pública, escritura admin
+    // ==========================================
+    match /metadata/{docId} {
+      // ✅ LECTURA PÚBLICA - Información del sitio
+      allow read: if true;
+      
+      // ✅ ESCRITURA SOLO ADMIN/ROOT
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // MENSAJES DE CONTACTO - Crear público, leer/modificar admin
+    // ==========================================
+    match /contactMessages/{messageId} {
+      // ✅ LECTURA SOLO ADMIN
+      allow read: if isAdmin();
+      
+      // ✅ CREAR MENSAJE - Cualquiera puede enviar
+      allow create: if true;
+      
+      // ✅ ACTUALIZAR/ELIMINAR SOLO ADMIN
+      allow update, delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // SOLICITUDES DE SOPORTE - Usuarios autenticados
+    // ==========================================
+    match /supportRequests/{requestId} {
+      // ✅ CREAR - Usuario autenticado
+      allow create: if isAuthenticated();
+      
+      // ✅ LEER - Usuario propietario o admin
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == resource.data.userId || isAdmin());
+      
+      // ✅ ACTUALIZAR - Solo admin (cambiar estado)
+      allow update: if isAdmin();
+      
+      // ✅ ELIMINAR - Solo admin
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // USUARIOS - Solo el propio usuario o admin
+    // ==========================================
+    match /users/{userId} {
+      // ✅ LEER - El mismo usuario o admin
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == userId || isAdmin());
+      
+      // ✅ CREAR - Solo admin (usuarios creados por admin)
+      allow create: if isAdmin();
+      
+      // ✅ ACTUALIZAR - El mismo usuario o admin
+      allow update: if isAuthenticated() && 
+                       (request.auth.uid == userId || isAdmin());
+      
+      // ✅ ELIMINAR - Solo admin
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // ÓRDENES - Solo usuarios autenticados
+    // ==========================================
+    match /orders/{orderId} {
+      // ✅ LEER - Usuario propietario o admin
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == resource.data.userId || isAdmin());
+      
+      // ✅ CREAR - Usuario autenticado
+      allow create: if isAuthenticated();
+      
+      // ✅ ACTUALIZAR - Solo admin
+      allow update: if isAdmin();
+      
+      // ✅ ELIMINAR - Solo admin
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // DENEGAR TODO LO DEMÁS
+    // ==========================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

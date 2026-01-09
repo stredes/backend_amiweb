@@ -8,11 +8,16 @@
     "node": ">=18.x"
   },
   "scripts": {
-    "dev": "npx vercel dev",
+    "start": "vercel dev --listen 3000",
     "type-check": "tsc --noEmit",
     "lint": "echo 'Add lint if needed.'",
     "create-users": "ts-node scripts/create-firebase-users.ts",
-    "init-firestore": "ts-node scripts/init-firestore.ts"
+    "init-firestore": "ts-node scripts/init-firestore.ts",
+    "upload-inventory": "ts-node scripts/upload-inventory-from-excel.ts",
+    "upload-inventory-direct": "node -r dotenv/config scripts/load-env.js upload-inventory-direct.ts",
+    "update-categories": "node -r dotenv/config scripts/load-env.js update-categories.ts",
+    "analyze-products": "node -r dotenv/config scripts/load-env.js analyze-products-categories.ts",
+    "fix-categories": "node -r dotenv/config scripts/load-env.js fix-product-categories.ts"
   },
   "dependencies": {
     "@vercel/node": "^3.2.3",
@@ -24,6 +29,7 @@
     "dotenv": "^17.2.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.2",
-    "vercel": "^50.1.6"
+    "vercel": "^50.1.6",
+    "xlsx": "^0.18.5"
   }
 }

@@ -1,4 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { logger } from '../utils/logger';
+import { trackFrontendConnection } from './connectionTracker';
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -29,9 +31,20 @@ export function enableCors(req: VercelRequest, res: VercelResponse): void {
   if (origin && (ALLOWED_ORIGINS.includes(origin) || (isDevelopment && isLocalhost))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    logger.debug('CORS: Origen permitido', { origin });
+    
+    // Trackear conexión del frontend
+    trackFrontendConnection(req);
   } else if (isDevelopment && !origin) {
     // Si no hay origin (ej: Postman), permitir en desarrollo
     res.setHeader('Access-Control-Allow-Origin', '*');
+    logger.debug('CORS: Permitiendo todos los orígenes (desarrollo sin origin)');
+  } else if (origin) {
+    logger.warn('CORS: Origen no permitido bloqueado', { 
+      origin,
+      endpoint: req.url,
+      isDevelopment 
+    });
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');

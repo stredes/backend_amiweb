@@ -1,12 +1,32 @@
+/**
+ * Inicialización del backend
+ * Este archivo se carga automáticamente al iniciar el servidor
+ */
+
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { showStartupBanner } from '../src/utils/startup';
+import { getConnectionInfo } from '../src/middleware/connectionTracker';
+
+// Mostrar banner solo la primera vez
+let hasShownBanner = false;
+if (!hasShownBanner) {
+  showStartupBanner();
+  hasShownBanner = true;
+}
 
 export default function handler(_req: VercelRequest, res: VercelResponse) {
+  const connectionInfo = getConnectionInfo();
+  
   return res.status(200).json({
     name: 'AMIWEB Backend API',
     version: '1.0.0',
     status: 'online',
+    uptime: `${connectionInfo.backendUptime}s`,
+    frontendConnections: connectionInfo.totalConnections,
+    connectedOrigins: connectionInfo.connectedOrigins,
     endpoints: {
       health: '/api/health',
+      connections: '/api/connections',
       metadata: '/api/metadata',
       categories: {
         list: 'GET /api/categories',

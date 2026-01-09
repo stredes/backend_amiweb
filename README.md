@@ -94,17 +94,34 @@ Si el frontend y backend se despliegan juntos en Vercel, se puede usar el mismo 
 ✅ **CORS Configurado** - Soporta múltiples orígenes incluyendo localhost  
 ✅ **Validación con Zod** - Validación de esquemas en entrada y configuración  
 ✅ **Error Handler Centralizado** - Logs estructurados y respuestas consistentes  
+✅ **Sistema de Logging Global** - Logging completo de errores, eventos y requests ([Ver docs](LOGGING_QUICKSTART.md))  
 ✅ **TypeScript Strict** - Tipado completo con compilación validada  
 ✅ **Búsqueda Optimizada** - Campo searchKeywords para productos  
 ✅ **Soft Deletes** - Preserva integridad de datos  
 ✅ **Paginación** - Implementada en todos los endpoints de listado  
 
+## Sistema de Logging
+
+El backend incluye un sistema completo de logging que registra automáticamente:
+
+- 🔍 **Todas las requests HTTP** - Método, endpoint, duración, código de estado
+- 🔐 **Eventos de autenticación** - Logins exitosos y fallidos
+- 📊 **Operaciones de base de datos** - Queries, creates, updates, deletes con duración
+- 🎯 **Eventos de negocio** - Creación de productos, pedidos, etc.
+- ⚠️ **Errores y advertencias** - Con stack traces y contexto completo
+- 🐌 **Requests lentas** - Alertas automáticas para requests >3s
+
+**Guías rápidas:**
+- [📋 Quick Start](LOGGING_QUICKSTART.md) - Uso básico y ejemplos
+- [📚 Documentación Completa](docs/LOGGING_SYSTEM.md) - Todos los detalles
+- [💻 Ejemplos de Código](docs/logging-examples.ts) - Casos de uso
+
 ## TODO
 - [ ] Implementar rate limiting con Vercel KV
 - [ ] Agregar índices de búsqueda (Algolia/MeiliSearch)
 - [ ] Implementar caché con Redis
+- [ ] Integrar Sentry para error tracking
 - [ ] Panel de administración
 - [ ] Integraciones externas (correo, CRM, ERP)
 - [ ] Tests unitarios y de integración
 - [ ] Webhooks para notificaciones
-- [ ] Monitoreo con Sentry

@@ -6,6 +6,8 @@ import { firestore } from '../../src/lib/firebase';
 import { ok, fail } from '../../src/utils/responses';
 import { handleError } from '../../src/utils/errorHandler';
 import { inventoryItemSchema } from '../../src/validation/inventorySchema';
+import { createRequestLogger } from '../../src/middleware/requestLogger';
+import { logger } from '../../src/utils/logger';
 
 /**
  * POST /api/inventory/upload
@@ -47,6 +49,7 @@ import { inventoryItemSchema } from '../../src/validation/inventorySchema';
  * }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const requestLogger = createRequestLogger(req, res);
   enableCors(req, res);
 
   if (handleCorsPreFlight(req, res)) {
@@ -57,14 +60,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Log de conexión desde el frontend
     const origin = req.headers.origin || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
-    console.log(`[INVENTORY UPLOAD] Request from frontend:`, {
+    
+    logger.info('📦 Recibiendo carga de inventario', {
       origin,
-      userAgent,
-      timestamp: new Date().toISOString(),
-      method: req.method
+      userAgent: userAgent.substring(0, 100),
+      method: req.method,
+      userId: (req as any).user?.uid
     });
 
     if (req.method !== 'POST') {
+      logger.warn('Método no permitido en carga de inventario', { method: req.method });
+      requestLogger.end(405);
       return fail(res, 'Method not allowed', 405);
     }
 
@@ -116,13 +122,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? `\n... y ${validationErrors.length - 10} errores más.` 
         : '';
 
-      console.error(`[INVENTORY UPLOAD] Validation errors:`, validationErrors);
-
+      logger.error('❌ Errores de validación en carga de inventario', null, {
+        totalErrors: validationErrors.length,
+        errors: validationErrors.slice(0, 5),
+        userId: (req as any).user?.uid
+      });
+      
+      requestLogger.end(400);
       return fail(res, `Errores de validación encontrados:\n${errorMessage}${additionalErrors}`, 400);
     }
 
     // Si no hay productos válidos después de validar
     if (validProducts.length === 0) {
+      logger.warn('No hay productos válidos para procesar', { userId: (req as any).user?.uid });
+      requestLogger.end(400);
       return fail(res, 'No hay productos válidos para procesar', 400);
     }
 
@@ -130,24 +143,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const overwriteExisting = req.body.overwriteExisting ?? false;
 
     // Log de parámetros recibidos
-    console.log(`[INVENTORY UPLOAD] Processing batch:`, {
+    logger.info('🔄 Procesando batch de inventario', {
       origin: req.headers.origin || 'unknown',
       productsCount: products.length,
       overwriteExisting,
-      timestamp: new Date().toISOString()
+      userId: (req as any).user?.uid
     });
 
     if (products.length === 0) {
+      logger.warn('Batch vacío recibido');
+      requestLogger.end(400);
       return fail(res, 'No products to process', 400);
     }
 
     if (products.length > 500) {
+      logger.error('Batch demasiado grande', null, { size: products.length, maxAllowed: 500 });
+      requestLogger.end(400);
       return fail(res, 'Maximum 500 products per batch. Recommended: 200 for optimal performance', 400);
     }
 
     // Advertir si el lote es muy grande (mayor a 200)
     if (products.length > 200) {
-      console.warn(`[INVENTORY UPLOAD] Large batch detected: ${products.length} products. Consider using batches of 200 for better performance`);
+      logger.warn('⚠️ Batch grande detectado', { 
+        size: products.length, 
+        recommended: 200,
+        message: 'Considera usar batches de 200 para mejor performance'
+      });
     }
 
     const results = {
@@ -212,7 +233,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    console.log(`[INVENTORY UPLOAD] Found ${existingProductsMap.size} existing products`);
+    logger.info('🔍 Productos existentes encontrados', { 
+      count: existingProductsMap.size,
+      totalToProcess: products.length
+    });
 
     // Helper: Generar slug único si hay duplicados
     const generateUniqueSlug = (baseSlug: string, existingSlugs: Set<string>): string => {
@@ -244,7 +268,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         if (usedSlugs.has(finalSlug) && !overwriteExisting) {
           finalSlug = generateUniqueSlug(product.slug, usedSlugs);
-          console.log(`[INVENTORY UPLOAD] Slug duplicado detectado, ajustado: ${product.slug} -> ${finalSlug}`);
+          logger.debug('🔄 Slug duplicado ajustado', { 
+            original: product.slug, 
+            nuevo: finalSlug,
+            producto: product.name
+          });
         }
         
         usedSlugs.add(finalSlug);
@@ -288,24 +316,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (error) {
         results.failed++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const isTransient = isTransientError(error);
+        
         results.errors.push({
           index: i,
           name: product.name,
-          slug: product.slug, // Usar slug original en error para identificación
+          slug: product.slug,
           error: errorMessage,
-          isTransient: isTransientError(error) // Marcar si es transitorio
+          isTransient
         });
-        console.error(`[INVENTORY UPLOAD] Error processing product ${i} (${product.slug}):`, errorMessage);
+        
+        logger.error(`❌ Error procesando producto #${i}`, error, {
+          productName: product.name,
+          slug: product.slug,
+          isTransient,
+          canRetry: isTransient
+        });
       }
     }
 
     // OPTIMIZACIÓN: Commit todas las operaciones de una vez
     if (results.successful > 0) {
       try {
+        const dbStart = Date.now();
         await batch.commit();
-        console.log(`[INVENTORY UPLOAD] Batch committed successfully with ${results.successful} operations`);
+        const dbDuration = Date.now() - dbStart;
+        
+        logger.database('batch-commit', 'products', true, dbDuration);
+        logger.info('✅ Batch committed exitosamente', { 
+          operations: results.successful,
+          duration: `${dbDuration}ms`
+        });
       } catch (error) {
-        console.error(`[INVENTORY UPLOAD] Batch commit failed:`, error);
+        logger.error('❌ Fallo al hacer commit del batch', error);
+        requestLogger.end(500);
         return fail(res, 'Failed to commit batch operations', 500);
       }
     }
@@ -314,7 +358,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const transientErrors = results.errors.filter(e => e.isTransient).length;
     const permanentErrors = results.errors.filter(e => !e.isTransient).length;
     
-    console.log(`[INVENTORY UPLOAD] Batch completed:`, {
+    // Log detallado de errores
+    if (results.errors.length > 0) {
+      logger.warn('⚠️ Errores en carga de inventario', {
+        total: results.errors.length,
+        transient: transientErrors,
+        permanent: permanentErrors,
+        details: results.errors.slice(0, 5).map(e => ({
+          index: e.index,
+          name: e.name,
+          slug: e.slug,
+          error: e.error,
+          canRetry: e.isTransient
+        }))
+      });
+    }
+    
+    logger.event('inventory.uploaded', {
+      totalProcessed: results.totalProcessed,
+      successful: results.successful,
+      failed: results.failed,
+      skipped: results.skipped,
+      userId: (req as any).user?.uid
+    });
+    
+    logger.info('🎉 Carga de inventario completada', {
       origin: req.headers.origin || 'unknown',
       totalProcessed: results.totalProcessed,
       successful: results.successful,
@@ -322,15 +390,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       skipped: results.skipped,
       transientErrors,
       permanentErrors,
-      timestamp: new Date().toISOString()
+      successRate: `${((results.successful / results.totalProcessed) * 100).toFixed(1)}%`
     });
 
+    requestLogger.end(201);
     return ok(res, results, 201);
 
   } catch (error) {
+    requestLogger.end(500);
     return handleError(error, res, {
       endpoint: '/api/inventory/upload',
-      method: req.method || 'POST'
+      method: req.method || 'POST',
+      userId: (req as any).user?.uid
     });
   }
 }

@@ -9,6 +9,7 @@ const ALLOWED_ORIGINS = [
   'https://amilab.vercel.app',
   'https://www.amilab.cl',
   'https://amiweb.vercel.app',
+  'https://amiweb-theta.vercel.app',
   'https://backend-amiweb.vercel.app',
 ];
 

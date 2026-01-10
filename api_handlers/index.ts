@@ -6,6 +6,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { showStartupBanner } from '../src/utils/startup';
 import { getConnectionInfo } from '../src/middleware/connectionTracker';
+import { enableCors, handleCorsPreFlight } from '../src/middleware/cors';
 
 // Mostrar banner solo la primera vez
 let hasShownBanner = false;
@@ -15,6 +16,11 @@ if (!hasShownBanner) {
 }
 
 export default function handler(_req: VercelRequest, res: VercelResponse) {
+  enableCors(_req, res);
+  if (handleCorsPreFlight(_req, res)) {
+    return;
+  }
+
   const connectionInfo = getConnectionInfo();
   
   return res.status(200).json({

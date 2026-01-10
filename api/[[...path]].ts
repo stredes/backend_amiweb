@@ -49,7 +49,7 @@ import warehouseBodegasHandler from '../api_handlers/warehouse/catalog/bodegas';
 import warehouseUbicacionesHandler from '../api_handlers/warehouse/catalog/ubicaciones';
 import warehouseUnidadesNegocioHandler from '../api_handlers/warehouse/catalog/unidades-negocio';
 
-type Handler = (req: VercelRequest, res: VercelResponse) => Promise<void> | void;
+type Handler = (req: VercelRequest, res: VercelResponse) => unknown;
 
 type Route = {
   pattern: RegExp;

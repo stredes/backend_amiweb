@@ -12,6 +12,27 @@ const ALLOWED_ORIGINS = [
   'https://backend-amiweb.vercel.app',
 ];
 
+function isAllowedOrigin(origin: string, isDevelopment: boolean): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    return true;
+  }
+
+  if (isDevelopment) {
+    return false;
+  }
+
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    if (hostname.endsWith('.vercel.app')) {
+      return hostname.includes('amiweb') || hostname.includes('amilab') || hostname.includes('backend-amiweb');
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 /**
  * Middleware CORS para permitir requests del frontend
  */
@@ -28,7 +49,7 @@ export function enableCors(req: VercelRequest, res: VercelResponse): void {
     origin.includes('192.168.')
   );
 
-  if (origin && (ALLOWED_ORIGINS.includes(origin) || (isDevelopment && isLocalhost))) {
+  if (origin && (isAllowedOrigin(origin, isDevelopment) || (isDevelopment && isLocalhost))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     logger.debug('CORS: Origen permitido', { origin });

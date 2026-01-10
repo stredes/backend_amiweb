@@ -58,6 +58,7 @@ type Route = {
 };
 
 const routes: Route[] = [
+  { pattern: /^\/$/, handler: indexHandler },
   { pattern: /^\/api$/, handler: indexHandler },
   { pattern: /^\/api\/health$/, handler: healthHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },

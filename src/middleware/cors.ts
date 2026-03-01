@@ -6,6 +6,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:5174',
+  'https://amilab.cl',
   'https://amilab.vercel.app',
   'https://www.amilab.cl',
   'https://amiweb.vercel.app',
@@ -13,17 +14,31 @@ const ALLOWED_ORIGINS = [
   'https://backend-amiweb.vercel.app',
 ];
 
-function isAllowedOrigin(origin: string, isDevelopment: boolean): boolean {
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    return true;
-  }
+function getConfiguredOrigins(): string[] {
+  const raw = process.env.CORS_ALLOWED_ORIGINS;
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
-  if (isDevelopment) {
-    return false;
+function isAllowedOrigin(origin: string, isDevelopment: boolean): boolean {
+  const configuredOrigins = getConfiguredOrigins();
+  if (ALLOWED_ORIGINS.includes(origin) || configuredOrigins.includes(origin)) {
+    return true;
   }
 
   try {
     const hostname = new URL(origin).hostname.toLowerCase();
+
+    // Soporta previews de Vercel cuando se habilita explícitamente.
+    const allowAllVercelPreviews =
+      isDevelopment || process.env.CORS_ALLOW_VERCEL_PREVIEWS === 'true';
+    if (allowAllVercelPreviews && hostname.endsWith('.vercel.app')) {
+      return true;
+    }
+
     if (hostname.endsWith('.vercel.app')) {
       return hostname.includes('amiweb') || hostname.includes('amilab') || hostname.includes('backend-amiweb');
     }

@@ -7,6 +7,7 @@ import indexHandler from '../api_handlers/index';
 import healthHandler from '../api_handlers/health';
 import readyHandler from '../api_handlers/ready';
 import metadataHandler from '../api_handlers/metadata';
+import searchHandler from '../api_handlers/search/index';
 import authMeHandler from '../api_handlers/auth/me';
 
 import ordersHandler from '../api_handlers/orders/index';
@@ -68,6 +69,17 @@ import warehouseOrigenesHandler from '../api_handlers/warehouse/catalog/origenes
 import warehouseBodegasHandler from '../api_handlers/warehouse/catalog/bodegas';
 import warehouseUbicacionesHandler from '../api_handlers/warehouse/catalog/ubicaciones';
 import warehouseUnidadesNegocioHandler from '../api_handlers/warehouse/catalog/unidades-negocio';
+import vendorKpisHandler from '../api_handlers/vendor/kpis';
+import vendorPipelineHandler from '../api_handlers/vendor/pipeline';
+import vendorAgendaHandler from '../api_handlers/vendor/agenda';
+import vendorClientsHandler from '../api_handlers/vendor/clients';
+import vendorOrdersHandler from '../api_handlers/vendor/orders';
+import vendorQuotesPendingHandler from '../api_handlers/vendor/quotes/pending';
+import vendorQuoteApproveHandler from '../api_handlers/vendor/quotes/[id]/approve';
+import vendorQuoteRejectHandler from '../api_handlers/vendor/quotes/[id]/reject';
+import vendorExportOrdersHandler from '../api_handlers/vendor/exports/orders';
+import vendorExportClientsHandler from '../api_handlers/vendor/exports/clients';
+import vendorExportPipelineHandler from '../api_handlers/vendor/exports/pipeline';
 
 type Handler = (req: VercelRequest, res: VercelResponse) => unknown;
 
@@ -83,6 +95,7 @@ const routes: Route[] = [
   { pattern: /^\/api\/health$/, handler: healthHandler },
   { pattern: /^\/api\/ready$/, handler: readyHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },
+  { pattern: /^\/api\/search$/, handler: searchHandler },
   { pattern: /^\/api\/auth\/me$/, handler: authMeHandler },
 
   { pattern: /^\/api\/orders$/, handler: ordersHandler },
@@ -143,7 +156,19 @@ const routes: Route[] = [
   { pattern: /^\/api\/warehouse\/catalog\/origenes$/, handler: warehouseOrigenesHandler },
   { pattern: /^\/api\/warehouse\/catalog\/bodegas$/, handler: warehouseBodegasHandler },
   { pattern: /^\/api\/warehouse\/catalog\/ubicaciones$/, handler: warehouseUbicacionesHandler },
-  { pattern: /^\/api\/warehouse\/catalog\/unidades-negocio$/, handler: warehouseUnidadesNegocioHandler }
+  { pattern: /^\/api\/warehouse\/catalog\/unidades-negocio$/, handler: warehouseUnidadesNegocioHandler },
+
+  { pattern: /^\/api\/vendor\/kpis$/, handler: vendorKpisHandler },
+  { pattern: /^\/api\/vendor\/pipeline$/, handler: vendorPipelineHandler },
+  { pattern: /^\/api\/vendor\/agenda$/, handler: vendorAgendaHandler },
+  { pattern: /^\/api\/vendor\/clients$/, handler: vendorClientsHandler },
+  { pattern: /^\/api\/vendor\/orders$/, handler: vendorOrdersHandler },
+  { pattern: /^\/api\/vendor\/quotes\/pending$/, handler: vendorQuotesPendingHandler },
+  { pattern: /^\/api\/vendor\/quotes\/([^/]+)\/approve$/, handler: vendorQuoteApproveHandler, params: ['id'] },
+  { pattern: /^\/api\/vendor\/quotes\/([^/]+)\/reject$/, handler: vendorQuoteRejectHandler, params: ['id'] },
+  { pattern: /^\/api\/vendor\/exports\/orders\.csv$/, handler: vendorExportOrdersHandler },
+  { pattern: /^\/api\/vendor\/exports\/clients\.csv$/, handler: vendorExportClientsHandler },
+  { pattern: /^\/api\/vendor\/exports\/pipeline\.csv$/, handler: vendorExportPipelineHandler }
 ];
 
 function getPathFromRequest(req: VercelRequest): string {

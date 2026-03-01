@@ -14,6 +14,8 @@ Fecha: 2026-03-01.
 - Fase actual (legacy): `/api/*`
 - Regla objetivo: `/api/v1/*`
 - Política: nuevos contratos deben nacer en `/api/v1`; cambios breaking no se aplican en endpoints legacy sin ventana de migración.
+- Fecha de corte propuesta para legacy `/api/*`: **2026-05-31**.
+- Contrato congelado en OpenAPI: `docs/openapi.v1.yaml`.
 
 ## 2) Contrato de respuesta
 
@@ -202,6 +204,50 @@ Fecha: 2026-03-01.
 - Filtros actuales: `page, pageSize, search, categoryId`
 - Respuesta actual: `items,total,page,pageSize`
 - Regla de consistencia: categorías y productos activos deben correlacionar por `categoryId`.
+
+## 9.1) Dominio vendedor (comercial)
+
+- `GET /api/vendor/kpis`
+  - Permiso: `vendedor|admin|root`
+  - KPI: ventas, comisión, clientes activos, completados, tasa de cierre, ticket promedio.
+
+- `GET /api/vendor/pipeline`
+  - Permiso: `vendedor|admin|root`
+  - Etapas: `nuevas`, `negociacion`, `aprobacion`, `riesgo`.
+
+- `GET /api/vendor/agenda`
+  - Permiso: `vendedor|admin|root`
+  - Bloques: seguimientos diarios, tareas y pedidos en tránsito.
+
+- `GET /api/vendor/clients`
+  - Permiso: `vendedor|admin|root`
+  - Query: `page,pageSize,search,isActive,vendorId?`
+  - Métricas por cliente: `totalSales`, `orderCount`, `lastOrderAt`.
+
+- `GET /api/vendor/quotes/pending`
+  - Permiso: `vendedor|admin|root`
+
+- `POST /api/vendor/quotes/:id/approve`
+  - Permiso: `vendedor|admin|root`
+  - Validación de transición en backend.
+
+- `POST /api/vendor/quotes/:id/reject`
+  - Permiso: `vendedor|admin|root`
+  - Requiere `rejectionReason`.
+
+- `GET /api/vendor/orders`
+  - Permiso: `vendedor|admin|root`
+  - Query: `page,pageSize,status,dateFrom,dateTo,vendorId?`
+  - Incluye `commercialStatus` y `quoteStatus` cuando aplica.
+
+- Exportaciones:
+  - `GET /api/vendor/exports/orders.csv`
+  - `GET /api/vendor/exports/clients.csv`
+  - `GET /api/vendor/exports/pipeline.csv`
+
+- Regla de cartera:
+  - Rol `vendedor` solo puede consultar y mutar recursos con `assignedSalesRep == user.uid`.
+  - Acceso fuera de cartera: `403 FORBIDDEN`.
 
 ## 10) Healthchecks
 - `GET /api/health`:

@@ -45,14 +45,47 @@ En Vercel, configura estas variables en Project Settings.
 vercel
 ```
 
+## Validación rápida
+```bash
+npm run type-check
+npm run test:unit
+npm run smoke:api -- https://backend-amiweb.vercel.app
+```
+
 ## Endpoints
 Base: `https://amilab-api.vercel.app/api` (placeholder)
 
 ### Salud
 - `GET /api/health`
+- `GET /api/ready`
 
 ### Metadata
 - `GET /api/metadata`
+
+### Búsqueda
+- `GET /api/search?q=term&limit=20&scope=catalog|global`
+
+### Admin
+- `GET /api/admin/kpis`
+- `GET /api/admin/clients`
+- `GET /api/admin/operations`
+- `GET /api/admin/approvals/pending`
+- `GET /api/admin/exports/executive`
+- `GET /api/admin/exports/orders`
+- `GET /api/admin/exports/clients`
+
+### Vendor
+- `GET /api/vendor/kpis`
+- `GET /api/vendor/pipeline`
+- `GET /api/vendor/agenda`
+- `GET /api/vendor/clients`
+- `GET /api/vendor/orders`
+- `GET /api/vendor/quotes/pending`
+- `POST /api/vendor/quotes/{id}/approve`
+- `POST /api/vendor/quotes/{id}/reject`
+- `GET /api/vendor/exports/orders.csv`
+- `GET /api/vendor/exports/clients.csv`
+- `GET /api/vendor/exports/pipeline.csv`
 
 ### Categorías
 - `GET /api/categories`
@@ -118,10 +151,9 @@ El backend incluye un sistema completo de logging que registra automáticamente:
 
 ## TODO
 - [ ] Implementar rate limiting con Vercel KV
-- [ ] Agregar índices de búsqueda (Algolia/MeiliSearch)
+- [ ] Optimizar búsqueda global con índice dedicado (Algolia/MeiliSearch)
 - [ ] Implementar caché con Redis
 - [ ] Integrar Sentry para error tracking
-- [ ] Panel de administración
 - [ ] Integraciones externas (correo, CRM, ERP)
-- [ ] Tests unitarios y de integración
+- [ ] Pruebas E2E por rol en staging
 - [ ] Webhooks para notificaciones

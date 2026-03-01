@@ -43,7 +43,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const app = getFirebaseApp();
     await app.auth().updateUser(id, { password: parsed.data.password });
 
-    await writeUserAuditLog(req, 'user.password_reset', id, {});
+    await writeUserAuditLog(req, 'user.password_reset', id, {
+      before: { password: 'redacted' },
+      after: { password: 'redacted' }
+    });
 
     requestLogger.end(200);
     return ok(res, { message: 'Contraseña actualizada' });

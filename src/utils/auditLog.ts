@@ -21,6 +21,7 @@ function getClientIp(req: VercelRequest): string | undefined {
 export async function writeAuditLog(req: AuthRequest, entry: AuditEntry): Promise<void> {
   try {
     const actor = req.user;
+    const requestId = (req as any).requestId || null;
     await collectionRef('auditLogs').add({
       action: entry.action,
       targetType: entry.targetType,
@@ -31,6 +32,7 @@ export async function writeAuditLog(req: AuthRequest, entry: AuditEntry): Promis
       actorRole: actor?.role || null,
       ip: getClientIp(req) || null,
       userAgent: req.headers['user-agent'] || null,
+      requestId,
       createdAt: nowTimestamp(),
     });
   } catch (error) {

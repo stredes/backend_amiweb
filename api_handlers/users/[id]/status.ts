@@ -54,6 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const app = getFirebaseApp();
     const targetUser = await app.auth().getUser(id);
     const targetRole = normalizeRole(targetUser.customClaims?.role);
+    const beforeIsActive = !targetUser.disabled;
 
     if (targetRole === 'root' && !isActive) {
       requestLogger.end(400);
@@ -70,7 +71,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     await writeUserAuditLog(req, 'user.status_changed', id, {
-      isActive
+      before: { isActive: beforeIsActive },
+      after: { isActive }
     });
 
     const user = await app.auth().getUser(id);

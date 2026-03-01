@@ -147,12 +147,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updatedAt: nowTimestamp()
       });
 
+      const user = toDirectoryUser({ ...userRecord, customClaims: { role: data.role } });
       await writeUserAuditLog(req, 'user.created', userRecord.uid, {
         role: data.role,
-        email: data.email
+        email: data.email,
+        after: user
       });
-
-      const user = toDirectoryUser({ ...userRecord, customClaims: { role: data.role } });
       requestLogger.end(201);
       return ok(res, { user }, 201);
     }

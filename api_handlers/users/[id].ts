@@ -77,6 +77,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const currentUser = await app.auth().getUser(id);
+      const currentProfileDoc = await collectionRef('userProfiles').doc(id).get();
+      const currentProfile = currentProfileDoc.exists ? currentProfileDoc.data() : {};
+      const beforeUser = toPublicUser(currentUser, currentProfile);
       const authPayload: Record<string, unknown> = {};
 
       if (updates.name) authPayload.displayName = updates.name;
@@ -110,16 +113,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { merge: true }
       );
 
-      await writeUserAuditLog(req, 'user.updated', id, {
-        fields: Object.keys(updates)
-      });
-
       const updated = await app.auth().getUser(id);
       const profileDoc = await collectionRef('userProfiles').doc(id).get();
       const profile = profileDoc.exists ? profileDoc.data() : {};
+      const afterUser = toPublicUser(updated, profile);
+
+      await writeUserAuditLog(req, 'user.updated', id, {
+        fields: Object.keys(updates),
+        before: beforeUser,
+        after: afterUser
+      });
 
       requestLogger.end(200);
-      return ok(res, { user: toPublicUser(updated, profile) });
+      return ok(res, { user: afterUser });
     }
 
     if (req.method === 'DELETE') {
@@ -135,12 +141,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const currentUser = await app.auth().getUser(id);
+      const currentProfileDoc = await collectionRef('userProfiles').doc(id).get();
+      const currentProfile = currentProfileDoc.exists ? currentProfileDoc.data() : {};
+      const beforeUser = toPublicUser(currentUser, currentProfile);
       await app.auth().deleteUser(id);
       await collectionRef('userProfiles').doc(id).delete().catch(() => undefined);
 
       await writeUserAuditLog(req, 'user.deleted', id, {
         email: currentUser.email,
-        role: normalizeRole(currentUser.customClaims?.role)
+        role: normalizeRole(currentUser.customClaims?.role),
+        before: beforeUser
       });
 
       requestLogger.end(200);

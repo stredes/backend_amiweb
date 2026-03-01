@@ -177,6 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     (typeof incomingRequestId === 'string' && incomingRequestId.trim().length > 0
       ? incomingRequestId
       : crypto.randomUUID());
+  (req as any).requestId = requestId;
   res.setHeader('x-request-id', requestId);
 
   enableCors(req, res);

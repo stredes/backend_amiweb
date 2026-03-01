@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { docRef, nowTimestamp } from '../../src/lib/firestore';
 import { ok, fail } from '../../src/utils/responses';
 import { categoryUpdateSchema } from '../../src/validation/categorySchema';
+import { requireAuth, requireRole } from '../../src/middleware/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
@@ -19,6 +20,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PUT') {
+      const isAuthenticated = await requireAuth(req, res);
+      if (!isAuthenticated) return;
+
+      const isAuthorized = requireRole(req, res, ['admin']);
+      if (!isAuthorized) return;
+
       const parsed = categoryUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
         return fail(res, 'Invalid category payload', 400);
@@ -34,6 +41,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
+      const isAuthenticated = await requireAuth(req, res);
+      if (!isAuthenticated) return;
+
+      const isAuthorized = requireRole(req, res, ['admin']);
+      if (!isAuthorized) return;
+
       // Soft delete: mantenemos el documento pero lo desactivamos.
       await ref.update({ isActive: false, updatedAt: nowTimestamp() });
       return ok(res, { id, isActive: false });

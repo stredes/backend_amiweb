@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { collectionRef, nowTimestamp } from '../../src/lib/firestore';
 import { ok, fail } from '../../src/utils/responses';
 import { categorySchema } from '../../src/validation/categorySchema';
+import { requireAuth, requireRole } from '../../src/middleware/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -15,6 +16,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
+      const isAuthenticated = await requireAuth(req, res);
+      if (!isAuthenticated) return;
+
+      const isAuthorized = requireRole(req, res, ['admin']);
+      if (!isAuthorized) return;
+
       const parsed = categorySchema.safeParse(req.body);
       if (!parsed.success) {
         return fail(res, 'Invalid category payload', 400);

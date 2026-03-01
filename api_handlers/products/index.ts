@@ -6,6 +6,7 @@ import { productSchema } from '../../src/validation/productSchema';
 import { createRequestLogger } from '../../src/middleware/requestLogger';
 import { logger } from '../../src/utils/logger';
 import { handleError } from '../../src/utils/errorHandler';
+import { requireAuth, requireRole } from '../../src/middleware/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
@@ -17,7 +18,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       logger.debug('Consultando productos', { categoryId, search, page, pageSize });
 
-      let query = collectionRef('products').where('isActive', '==', true);
+      // Evita depender de índices compuestos (isActive + orderBy/categoryId).
+      // Filtramos isActive y orden en memoria para máxima compatibilidad operativa.
+      let query: FirebaseFirestore.Query = collectionRef('products');
 
       if (categoryId && !Array.isArray(categoryId)) {
         query = query.where('categoryId', '==', categoryId);
@@ -25,12 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // TODO: Para búsquedas eficientes, usar un índice de búsqueda o un campo "searchKeywords".
       const dbStart = Date.now();
-      const snapshot = await query.orderBy('name').offset(offset).limit(pageSize).get();
+      const snapshot = await query.get();
       const dbDuration = Date.now() - dbStart;
       
       logger.database('query', 'products', true, dbDuration);
       
-      let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+      let items = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((item: any) => item.isActive !== false) as any[];
 
       if (search && !Array.isArray(search)) {
         const term = search.toLowerCase();
@@ -41,17 +46,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         logger.debug('Filtrado de búsqueda aplicado', { term, resultCount: items.length });
       }
 
-      logger.info('Productos consultados exitosamente', { count: items.length, page });
+      items.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+
+      const total = items.length;
+      const paginatedItems = items.slice(offset, offset + pageSize);
+
+      logger.info('Productos consultados exitosamente', { count: paginatedItems.length, total, page });
       requestLogger.end(200);
       return ok(res, {
-        items,
-        total: items.length,
+        items: paginatedItems,
+        total,
         page,
         pageSize
       });
     }
 
     if (req.method === 'POST') {
+      const isAuthenticated = await requireAuth(req, res);
+      if (!isAuthenticated) {
+        requestLogger.end(401);
+        return;
+      }
+
+      const isAuthorized = requireRole(req, res, ['admin']);
+      if (!isAuthorized) {
+        requestLogger.end(403);
+        return;
+      }
+
       logger.debug('Creando nuevo producto', { body: req.body });
       
       const parsed = productSchema.safeParse(req.body);

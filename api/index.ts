@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { fail } from '../src/utils/responses';
+import { enableCors, handleCorsPreFlight } from '../src/middleware/cors';
 
 import indexHandler from '../api_handlers/index';
 import healthHandler from '../api_handlers/health';
@@ -151,6 +152,11 @@ function applyParams(req: VercelRequest, params: string[], match: RegExpMatchArr
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  enableCors(req, res);
+  if (handleCorsPreFlight(req, res)) {
+    return;
+  }
+
   const path = getPathFromRequest(req);
 
   for (const route of routes) {

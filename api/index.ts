@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'node:crypto';
 import { fail } from '../src/utils/responses';
 import { enableCors, handleCorsPreFlight } from '../src/middleware/cors';
 
@@ -36,10 +37,13 @@ import supportRequestByIdHandler from '../api_handlers/support-requests/[id]';
 
 import contactMessagesHandler from '../api_handlers/contact-messages/index';
 import usersHandler from '../api_handlers/users/index';
+import usersSummaryViewHandler from '../api_handlers/users/views/summary';
 import userByIdHandler from '../api_handlers/users/[id]';
+import userAuditHandler from '../api_handlers/users/[id]/audit';
 import userStatusHandler from '../api_handlers/users/[id]/status';
 import userResetPasswordHandler from '../api_handlers/users/[id]/reset-password';
 import usersByRoleHandler from '../api_handlers/users/role/[role]';
+import workflowChecklistHandler from '../api_handlers/workflows/checklist';
 
 import warehouseStockHandler from '../api_handlers/warehouse/stock';
 import warehouseStockExportHandler from '../api_handlers/warehouse/stock/export';
@@ -48,6 +52,7 @@ import warehouseOrdersHandler from '../api_handlers/warehouse/orders';
 import warehouseStatsHandler from '../api_handlers/warehouse/stats';
 import warehousePrepareHandler from '../api_handlers/warehouse/prepare/[orderId]';
 import warehouseDispatchHandler from '../api_handlers/warehouse/dispatch/[orderId]';
+import warehouseApproveDispatchHandler from '../api_handlers/warehouse/approve-dispatch/[orderId]';
 import warehouseFamiliasHandler from '../api_handlers/warehouse/catalog/familias';
 import warehouseSubfamiliasHandler from '../api_handlers/warehouse/catalog/subfamilias';
 import warehouseMarcasHandler from '../api_handlers/warehouse/catalog/marcas';
@@ -85,6 +90,7 @@ const routes: Route[] = [
   { pattern: /^\/api\/categories\/([^/]+)$/, handler: categoryByIdHandler, params: ['id'] },
 
   { pattern: /^\/api\/inventory\/upload$/, handler: inventoryUploadHandler },
+  { pattern: /^\/api\/workflows\/checklist$/, handler: workflowChecklistHandler },
 
   { pattern: /^\/api\/notifications$/, handler: notificationsHandler },
 
@@ -99,7 +105,9 @@ const routes: Route[] = [
   { pattern: /^\/api\/support-requests\/([^/]+)$/, handler: supportRequestByIdHandler, params: ['id'] },
 
   { pattern: /^\/api\/contact-messages$/, handler: contactMessagesHandler },
+  { pattern: /^\/api\/users\/views\/summary$/, handler: usersSummaryViewHandler },
   { pattern: /^\/api\/users\/role\/([^/]+)$/, handler: usersByRoleHandler, params: ['role'] },
+  { pattern: /^\/api\/users\/([^/]+)\/audit$/, handler: userAuditHandler, params: ['id'] },
   { pattern: /^\/api\/users\/([^/]+)\/status$/, handler: userStatusHandler, params: ['id'] },
   { pattern: /^\/api\/users\/([^/]+)\/reset-password$/, handler: userResetPasswordHandler, params: ['id'] },
   { pattern: /^\/api\/users\/([^/]+)$/, handler: userByIdHandler, params: ['id'] },
@@ -111,6 +119,7 @@ const routes: Route[] = [
   { pattern: /^\/api\/warehouse\/orders$/, handler: warehouseOrdersHandler },
   { pattern: /^\/api\/warehouse\/stats$/, handler: warehouseStatsHandler },
   { pattern: /^\/api\/warehouse\/prepare\/([^/]+)$/, handler: warehousePrepareHandler, params: ['orderId'] },
+  { pattern: /^\/api\/warehouse\/approve-dispatch\/([^/]+)$/, handler: warehouseApproveDispatchHandler, params: ['orderId'] },
   { pattern: /^\/api\/warehouse\/dispatch\/([^/]+)$/, handler: warehouseDispatchHandler, params: ['orderId'] },
   { pattern: /^\/api\/warehouse\/catalog\/familias$/, handler: warehouseFamiliasHandler },
   { pattern: /^\/api\/warehouse\/catalog\/subfamilias$/, handler: warehouseSubfamiliasHandler },
@@ -152,6 +161,13 @@ function applyParams(req: VercelRequest, params: string[], match: RegExpMatchArr
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const incomingRequestId = req.headers['x-request-id'];
+  const requestId =
+    (typeof incomingRequestId === 'string' && incomingRequestId.trim().length > 0
+      ? incomingRequestId
+      : crypto.randomUUID());
+  res.setHeader('x-request-id', requestId);
+
   enableCors(req, res);
   if (handleCorsPreFlight(req, res)) {
     return;

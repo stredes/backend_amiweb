@@ -7,6 +7,16 @@ export type PreparationStatus =
   | 'preparado'      // Preparado, listo para despacho
   | 'despachado';    // Despachado
 
+export type InspectionStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
+export type AdminApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
 export interface OrderPreparationItem {
   productId: string;
   productName: string;
@@ -52,6 +62,16 @@ export interface OrderPreparation {
   // Notas y observaciones
   preparationNotes?: string;
   dispatchNotes?: string;
+
+  // Inspección y aprobación administrativa
+  inspectionStatus?: InspectionStatus;
+  inspectionNotes?: string;
+  inspectedBy?: string;
+  inspectedAt?: Timestamp | any;
+  adminApprovalStatus?: AdminApprovalStatus;
+  adminApprovalNotes?: string;
+  adminApprovedBy?: string;
+  adminApprovedAt?: Timestamp | any;
   
   // Metadata
   createdAt: Timestamp | any;

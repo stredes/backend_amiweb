@@ -4,6 +4,8 @@ import { requireAuth, requireRole } from '../../../src/middleware/auth';
 import { ok, fail } from '../../../src/utils/responses';
 import { handleError } from '../../../src/utils/errorHandler';
 import { createRequestLogger } from '../../../src/middleware/requestLogger';
+import { resetUserPasswordSchema } from '../../../src/validation/userAdminSchema';
+import { writeUserAuditLog } from '../../../src/utils/auditLog';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
@@ -32,14 +34,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return fail(res, 'Método no permitido', 405);
     }
 
-    const { password } = (req.body || {}) as { password?: string };
-    if (!password || password.length < 6) {
+    const parsed = resetUserPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
       requestLogger.end(400);
-      return fail(res, 'password es requerido y debe tener al menos 6 caracteres', 400);
+      return fail(res, 'password inválido', 400, parsed.error.errors);
     }
 
     const app = getFirebaseApp();
-    await app.auth().updateUser(id, { password });
+    await app.auth().updateUser(id, { password: parsed.data.password });
+
+    await writeUserAuditLog(req, 'user.password_reset', id, {});
 
     requestLogger.end(200);
     return ok(res, { message: 'Contraseña actualizada' });
@@ -47,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     requestLogger.end(500);
     return handleError(error, res, {
       endpoint: `/api/users/${id}/reset-password`,
-      method: req.method,
+      method: req.method
     });
   }
 }

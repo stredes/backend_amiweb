@@ -25,7 +25,7 @@ export async function requireAuth(req: VercelRequest, res: VercelResponse): Prom
         endpoint: req.url,
         ip: req.headers['x-forwarded-for'] || req.headers['x-real-ip']
       });
-      fail(res, 'No authorization token provided', 401);
+      fail(res, 'No authorization token provided', 401, undefined, 'TOKEN_MISSING');
       return false;
     }
 
@@ -33,7 +33,7 @@ export async function requireAuth(req: VercelRequest, res: VercelResponse): Prom
 
     if (!token) {
       logger.warn('Formato de token inválido', { endpoint: req.url });
-      fail(res, 'Invalid token format', 401);
+      fail(res, 'Invalid token format', 401, undefined, 'TOKEN_INVALID');
       return false;
     }
 
@@ -60,7 +60,16 @@ export async function requireAuth(req: VercelRequest, res: VercelResponse): Prom
       errorType: error instanceof Error ? error.name : 'Unknown'
     });
     logger.auth('Fallo de autenticación', undefined, false);
-    fail(res, 'Invalid or expired token', 401);
+    const code = (error as any)?.code;
+    if (code === 'auth/id-token-expired') {
+      fail(res, 'Token expired', 401, undefined, 'TOKEN_EXPIRED');
+      return false;
+    }
+    if (code === 'auth/argument-error' || code === 'auth/invalid-id-token') {
+      fail(res, 'Invalid token', 401, undefined, 'TOKEN_INVALID');
+      return false;
+    }
+    fail(res, 'Invalid or expired token', 401, undefined, 'TOKEN_INVALID');
     return false;
   }
 }

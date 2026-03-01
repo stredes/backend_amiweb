@@ -8,6 +8,7 @@ import { logger } from '../../../src/utils/logger';
 import { handleError } from '../../../src/utils/errorHandler';
 import { createNotification } from '../../../src/utils/notifications';
 import { getFirebaseApp } from '../../../src/lib/firebase';
+import { createInventoryMovementsBatch } from '../../../src/utils/inventoryMovements';
 
 /**
  * POST /api/quotes/[id]/convert-to-order
@@ -234,12 +235,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         totalItems: itemCount,
         preparedItems: 0,
         progress: 0,
+        inspectionStatus: 'pending',
+        adminApprovalStatus: 'pending',
         estimatedMinutes: (itemCount * 2) + 5,
         createdAt: nowTimestamp(),
         updatedAt: nowTimestamp()
       };
 
       await collectionRef('orderPreparations').add(preparationData);
+
+      await createInventoryMovementsBatch(
+        orderRef.id,
+        orderNumber,
+        quote.items.map((item: any) => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity
+        })),
+        'sale_reserved',
+        userId,
+        'Reserva de inventario por conversión de cotización',
+        id
+      );
 
       logger.info('Orden asignada automáticamente a bodega', {
         orderId: orderRef.id,

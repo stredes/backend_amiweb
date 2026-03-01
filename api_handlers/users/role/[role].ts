@@ -5,17 +5,35 @@ import { requireAuth, requireRole } from '../../../src/middleware/auth';
 import { ok, fail } from '../../../src/utils/responses';
 import { handleError } from '../../../src/utils/errorHandler';
 import { createRequestLogger } from '../../../src/middleware/requestLogger';
-import type { UserRole } from '../../../src/models/user';
+import { parsePagination } from '../../../src/utils/pagination';
+import {
+  filterUsersForDirectory,
+  normalizeRole,
+  paginateItems,
+  parseOptionalBoolean,
+  type DirectoryUser
+} from '../../../src/utils/userAdminPolicy';
+import { userRoleSchema } from '../../../src/validation/userAdminSchema';
 
-const ALLOWED_ROLES: UserRole[] = ['root', 'admin', 'vendedor', 'bodega', 'callcenter', 'soporte', 'socio', 'cliente'];
+function toDirectoryUser(user: any): DirectoryUser {
+  return {
+    id: user.uid,
+    email: user.email || '',
+    name: user.displayName || user.email?.split('@')[0] || 'Usuario',
+    role: normalizeRole(user.customClaims?.role),
+    phone: user.phoneNumber || undefined,
+    isActive: !user.disabled
+  };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
-  const { role } = req.query;
+  const roleRaw = Array.isArray(req.query.role) ? undefined : req.query.role;
+  const parsedRole = userRoleSchema.safeParse(roleRaw);
 
-  if (!role || Array.isArray(role) || !ALLOWED_ROLES.includes(role as UserRole)) {
+  if (!parsedRole.success) {
     requestLogger.end(400);
-    return fail(res, 'Rol inválido', 400);
+    return fail(res, 'Rol inválido', 400, parsedRole.error.errors, 'VALIDATION_ERROR');
   }
 
   try {
@@ -25,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
-    const isAuthorized = requireRole(req, res, ['root', 'admin', 'vendedor', 'socio', 'cliente', 'bodega', 'callcenter', 'soporte']);
+    const isAuthorized = requireRole(req, res, ['root', 'admin']);
     if (!isAuthorized) {
       requestLogger.end(403);
       return;
@@ -38,20 +56,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const app = getFirebaseApp();
     const list = await app.auth().listUsers(1000);
-    let users = list.users
-      .filter((u) => (u.customClaims?.role || 'cliente') === role)
-      .map((u) => ({
-        id: u.uid,
-        email: u.email || '',
-        name: u.displayName || u.email?.split('@')[0] || 'Usuario',
-        role,
-        phone: u.phoneNumber || undefined,
-        isActive: !u.disabled,
-      }));
+    let users = list.users.map(toDirectoryUser).filter((u) => u.role === parsedRole.data);
+
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const isActive = parseOptionalBoolean(req.query.isActive);
+
+    users = filterUsersForDirectory(users, {
+      role: parsedRole.data,
+      search,
+      isActive
+    });
 
     const assignedSalesRep = typeof req.query.vendorId === 'string' ? req.query.vendorId : undefined;
 
-    if (role === 'socio' && assignedSalesRep) {
+    if (parsedRole.data === 'socio' && assignedSalesRep) {
       const customersSnapshot = await collectionRef('customers')
         .where('assignedSalesRep', '==', assignedSalesRep)
         .where('status', '==', 'activo')
@@ -66,13 +84,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       users = users.filter((u) => allowedEmails.has(u.email));
     }
 
+    const { page, pageSize } = parsePagination(req.query as Record<string, string>);
+    const pagination = paginateItems(users, page, pageSize);
+
     requestLogger.end(200);
-    return ok(res, { users });
+    return ok(res, {
+      items: pagination.items,
+      users: pagination.items,
+      total: pagination.total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      totalPages: pagination.totalPages
+    });
   } catch (error) {
     requestLogger.end(500);
     return handleError(error, res, {
-      endpoint: `/api/users/role/${role}`,
-      method: req.method,
+      endpoint: `/api/users/role/${parsedRole.data}`,
+      method: req.method
     });
   }
 }

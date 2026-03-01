@@ -6,6 +6,7 @@ import { createRequestLogger } from '../../src/middleware/requestLogger';
 import { requireAuth } from '../../src/middleware/auth';
 import { logger } from '../../src/utils/logger';
 import { handleError } from '../../src/utils/errorHandler';
+import { canTransitionOrderStatus } from '../../src/utils/workflowCycle';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
@@ -126,6 +127,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return fail(res, 'La orden no está en estado enviado', 400);
         }
         updates.status = 'entregado';
+      }
+
+      if (updates.status && updates.status !== currentData.status) {
+        const canTransition = canTransitionOrderStatus(
+          currentData.status,
+          updates.status,
+          userRole || 'cliente',
+          Boolean(confirmDelivery)
+        );
+        if (!canTransition) {
+          logger.warn('Transición de estado inválida', {
+            orderId: id,
+            from: currentData.status,
+            to: updates.status,
+            userId: user?.uid,
+            role: userRole
+          });
+          requestLogger.end(400);
+          return fail(res, `No se puede cambiar estado de ${currentData.status} a ${updates.status}`, 400);
+        }
       }
 
       // Agregar timestamps según el estado

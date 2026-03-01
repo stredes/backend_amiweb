@@ -5,6 +5,7 @@ import { requireAuth, requireWarehouse } from '../../../src/middleware/auth';
 import { createRequestLogger } from '../../../src/middleware/requestLogger';
 import { logger } from '../../../src/utils/logger';
 import { handleError } from '../../../src/utils/errorHandler';
+import { createInventoryMovementsBatch } from '../../../src/utils/inventoryMovements';
 
 /**
  * API para despacho de pedidos
@@ -61,6 +62,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, `Pedido no está preparado (estado: ${prepData.status})`, 400);
       }
 
+      if (prepData.inspectionStatus !== 'approved') {
+        requestLogger.end(400);
+        return fail(res, 'Pedido no tiene inspección aprobada', 400);
+      }
+
+      if (prepData.adminApprovalStatus !== 'approved') {
+        requestLogger.end(400);
+        return fail(res, 'Pedido no tiene aprobación administrativa para despacho', 400);
+      }
+
       // Actualizar preparación con datos de despacho
       await collectionRef('orderPreparations').doc(orderId).update({
         status: 'despachado',
@@ -87,6 +98,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updatedBy: user.uid,
         updateOrigin
       });
+
+      const orderData = orderDoc.data() as any;
+      await createInventoryMovementsBatch(
+        String(orderId),
+        orderData?.orderNumber,
+        (orderData?.items || []).map((item: any) => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity
+        })),
+        'sale_dispatch',
+        user.uid,
+        'Salida por despacho de pedido',
+        orderData?.quoteId
+      );
 
       logger.event('order.dispatched', { 
         orderId, 

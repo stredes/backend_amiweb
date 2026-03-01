@@ -7,11 +7,26 @@ import { logger } from '../../../src/utils/logger';
 import { handleError } from '../../../src/utils/errorHandler';
 import { OrderPreparation, OrderPreparationItem } from '../../../src/models/orderPreparation';
 
+function validatePreparationItems(items: OrderPreparationItem[]): string | null {
+  for (const item of items) {
+    if (item.quantityPrepared < 0 || item.quantityOrdered < 0) {
+      return `Cantidad inválida en ${item.productName}`;
+    }
+    if (item.quantityPrepared > item.quantityOrdered) {
+      return `Cantidad preparada excede solicitada en ${item.productName}`;
+    }
+    if (item.isPrepared && item.quantityPrepared < item.quantityOrdered) {
+      return `Item marcado preparado sin cantidad completa en ${item.productName}`;
+    }
+  }
+  return null;
+}
+
 /**
  * API para preparación de pedidos individuales
  * GET /api/warehouse/prepare/[orderId] - Obtener detalles de preparación
  * POST /api/warehouse/prepare/[orderId] - Asignar preparador y crear registro
- * PATCH /api/warehouse/prepare/[orderId] - Actualizar progreso de preparación
+ * PATCH /api/warehouse/prepare/[orderId] - Actualizar progreso e inspección de preparación
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestLogger = createRequestLogger(req, res);
@@ -23,16 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Verificar autenticación
     const isAuthenticated = await requireAuth(req, res);
     if (!isAuthenticated) return;
 
-    // Verificar permisos de bodega
     if (!requireWarehouse(req, res)) return;
 
     const user = (req as any).user;
 
-    // GET: Obtener detalles de preparación
     if (req.method === 'GET') {
       logger.debug('Consultando preparación de pedido', { orderId });
 
@@ -51,11 +63,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // POST: Asignar preparador y crear registro de preparación
     if (req.method === 'POST') {
       logger.debug('Asignando preparador a pedido', { orderId, userId: user.uid });
 
-      // Verificar que la orden existe y está confirmada
       const orderDoc = await collectionRef('orders').doc(orderId).get();
       if (!orderDoc.exists) {
         requestLogger.end(404);
@@ -72,7 +82,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, 'Orden no está en estado confirmado', 400);
       }
 
-      // Verificar si ya tiene preparación asignada
       const prepDoc = await collectionRef('orderPreparations').doc(orderId).get();
       const prepData = prepDoc.data();
       if (prepDoc.exists && prepData && prepData.status !== 'pendiente') {
@@ -80,7 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, 'Orden ya tiene preparador asignado', 400);
       }
 
-      // Crear items de preparación
       const items: OrderPreparationItem[] = (orderData.items || []).map((item: any) => ({
         productId: item.productId,
         productName: item.productName,
@@ -101,6 +109,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         totalItems: items.length,
         preparedItems: 0,
         progress: 0,
+        inspectionStatus: 'pending',
+        adminApprovalStatus: 'pending',
         createdAt: nowTimestamp(),
         updatedAt: nowTimestamp()
       };
@@ -112,7 +122,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? updateOriginHeader[0]
         : updateOriginHeader || 'unknown';
 
-      // Actualizar estado de la orden
       await collectionRef('orders').doc(orderId).update({
         status: 'procesando',
         updatedAt: nowTimestamp(),
@@ -127,7 +136,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return ok(res, { id: orderId, ...preparation }, 201);
     }
 
-    // PATCH: Actualizar progreso de preparación
     if (req.method === 'PATCH') {
       logger.debug('Actualizando preparación de pedido', { orderId, body: req.body });
 
@@ -137,33 +145,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, 'Registro de preparación no encontrado', 404);
       }
 
-      const { items, notes } = req.body;
-
+      const { items, notes, inspectionStatus, inspectionNotes } = req.body || {};
       if (!items || !Array.isArray(items)) {
         requestLogger.end(400);
         return fail(res, 'Items inválidos', 400);
       }
 
-      // Calcular progreso
-      const preparedCount = items.filter((item: OrderPreparationItem) => item.isPrepared).length;
-      const progress = Math.round((preparedCount / items.length) * 100);
-      const allPrepared = preparedCount === items.length;
+      const typedItems = items as OrderPreparationItem[];
+      const itemValidationError = validatePreparationItems(typedItems);
+      if (itemValidationError) {
+        requestLogger.end(400);
+        return fail(res, itemValidationError, 400);
+      }
+
+      const preparedCount = typedItems.filter((item) => item.isPrepared).length;
+      const progress = typedItems.length === 0 ? 0 : Math.round((preparedCount / typedItems.length) * 100);
+      const allPrepared = preparedCount === typedItems.length;
 
       const updates: any = {
-        items,
+        items: typedItems,
         preparedItems: preparedCount,
         progress,
         updatedAt: nowTimestamp()
       };
 
-      // Si es la primera actualización, marcar como "en_preparacion"
       const existingPrep = prepDoc.data();
       if (existingPrep && existingPrep.status === 'asignado') {
         updates.status = 'en_preparacion';
         updates.startedAt = nowTimestamp();
       }
 
-      // Si todo está preparado, marcar como "preparado"
       if (allPrepared) {
         updates.status = 'preparado';
         updates.completedAt = nowTimestamp();
@@ -173,12 +184,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updates.preparationNotes = notes;
       }
 
+      if (inspectionStatus) {
+        if (!['pending', 'approved', 'rejected'].includes(inspectionStatus)) {
+          requestLogger.end(400);
+          return fail(res, 'inspectionStatus inválido', 400);
+        }
+
+        if (inspectionStatus === 'approved' && !allPrepared) {
+          requestLogger.end(400);
+          return fail(res, 'No se puede aprobar inspección sin preparación completa', 400);
+        }
+
+        updates.inspectionStatus = inspectionStatus;
+        updates.inspectionNotes = inspectionNotes || null;
+        updates.inspectedBy = user.uid;
+        updates.inspectedAt = nowTimestamp();
+      }
+
       await collectionRef('orderPreparations').doc(orderId).update(updates);
 
-      logger.event('order.preparation_updated', { 
-        orderId, 
-        progress, 
-        status: updates.status 
+      logger.event('order.preparation_updated', {
+        orderId,
+        progress,
+        status: updates.status,
+        inspectionStatus: updates.inspectionStatus
       });
       logger.info('Preparación actualizada', { orderId, progress });
 
@@ -190,7 +219,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     logger.warn('Método no permitido', { method: req.method });
     requestLogger.end(405);
     return fail(res, 'Método no permitido', 405);
-
   } catch (error) {
     requestLogger.end(500);
     return handleError(error, res, {

@@ -26,6 +26,7 @@ interface LogEntry {
     userId?: string;
     ip?: string;
     userAgent?: string;
+    requestId?: string;
   };
 }
 
@@ -154,7 +155,8 @@ class Logger {
     statusCode: number,
     duration?: number,
     userId?: string,
-    ip?: string
+    ip?: string,
+    requestId?: string
   ): void {
     const entry: LogEntry = {
       level: statusCode >= 400 ? LogLevel.WARN : LogLevel.INFO,
@@ -164,7 +166,8 @@ class Logger {
         method,
         endpoint,
         userId,
-        ip
+        ip,
+        requestId
       },
       context: duration ? { duration: `${duration}ms` } : undefined
     };

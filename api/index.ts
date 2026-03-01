@@ -5,6 +5,7 @@ import { enableCors, handleCorsPreFlight } from '../src/middleware/cors';
 
 import indexHandler from '../api_handlers/index';
 import healthHandler from '../api_handlers/health';
+import readyHandler from '../api_handlers/ready';
 import metadataHandler from '../api_handlers/metadata';
 import authMeHandler from '../api_handlers/auth/me';
 
@@ -73,6 +74,7 @@ const routes: Route[] = [
   { pattern: /^\/$/, handler: indexHandler },
   { pattern: /^\/api$/, handler: indexHandler },
   { pattern: /^\/api\/health$/, handler: healthHandler },
+  { pattern: /^\/api\/ready$/, handler: readyHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },
   { pattern: /^\/api\/auth\/me$/, handler: authMeHandler },
 
@@ -148,7 +150,16 @@ function getPathFromRequest(req: VercelRequest): string {
   }
 
   const normalized = path.replace(/\/+$/, '');
-  return normalized.length === 0 ? '/api' : normalized;
+  const normalizedPath = normalized.length === 0 ? '/api' : normalized;
+
+  // Compatibilidad de rutas durante transición de versionado:
+  // /api/v1/* -> /api/* (sin breaking para frontend legado)
+  if (normalizedPath === '/api/v1') return '/api';
+  if (normalizedPath.startsWith('/api/v1/')) {
+    return `/api/${normalizedPath.slice('/api/v1/'.length)}`;
+  }
+
+  return normalizedPath;
 }
 
 function applyParams(req: VercelRequest, params: string[], match: RegExpMatchArray) {

@@ -16,6 +16,13 @@ export class RequestLogger {
     this.res = res;
   }
 
+  private getRequestId(): string | undefined {
+    const value = this.res.getHeader('x-request-id');
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+    return undefined;
+  }
+
   /**
    * Inicia el logging de la request
    */
@@ -24,13 +31,15 @@ export class RequestLogger {
     const userId = (this.req as any).user?.uid;
     const ip = (headers['x-forwarded-for'] || headers['x-real-ip'] || 'unknown') as string;
     const userAgent = headers['user-agent'] as string;
+    const requestId = this.getRequestId();
 
     logger.info(`Request iniciado: ${method} ${url}`, {
       method,
       endpoint: url,
       userId,
       ip: ip.split(',')[0].trim(), // tomar la primera IP si hay múltiples
-      userAgent: userAgent?.substring(0, 100) // limitar longitud
+      userAgent: userAgent?.substring(0, 100), // limitar longitud
+      requestId
     });
   }
 
@@ -43,6 +52,7 @@ export class RequestLogger {
     const userId = (this.req as any).user?.uid;
     const ip = (this.req.headers['x-forwarded-for'] || 
                 this.req.headers['x-real-ip'] || 'unknown') as string;
+    const requestId = this.getRequestId();
 
     logger.request(
       method || 'UNKNOWN',
@@ -50,7 +60,8 @@ export class RequestLogger {
       statusCode,
       duration,
       userId,
-      ip.split(',')[0].trim()
+      ip.split(',')[0].trim(),
+      requestId
     );
 
     // Log adicionales para requests lentas
@@ -59,7 +70,8 @@ export class RequestLogger {
         method,
         endpoint: url,
         duration: `${duration}ms`,
-        statusCode
+        statusCode,
+        requestId
       });
     }
 

@@ -24,7 +24,8 @@ function toDirectoryUser(user: any): DirectoryUser {
     name: user.displayName || user.email?.split('@')[0] || 'Usuario',
     role: normalizeRole(user.customClaims?.role) as UserRole,
     phone: user.phoneNumber || undefined,
-    isActive: !user.disabled
+    isActive: !user.disabled,
+    vendorId: null
   };
 }
 
@@ -42,6 +43,19 @@ async function listUsersForDashboard() {
   } while (nextPageToken && guard < 5);
 
   return users;
+}
+
+async function loadProfilesByUid(uids: string[]) {
+  const profileDocs = await Promise.all(
+    uids.map((uid) => collectionRef('userProfiles').doc(uid).get().catch(() => null))
+  );
+  const map = new Map<string, any>();
+  profileDocs.forEach((doc, index) => {
+    if (doc?.exists) {
+      map.set(uids[index], doc.data() || {});
+    }
+  });
+  return map;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -78,7 +92,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const allUsers = await listUsersForDashboard();
-      const mapped = allUsers.map(toDirectoryUser);
+      const profileMap = await loadProfilesByUid(allUsers.map((u) => u.uid));
+      const mapped = allUsers.map((user) => {
+        const base = toDirectoryUser(user);
+        const profile = profileMap.get(user.uid) || {};
+        return {
+          ...base,
+          phone: base.phone || profile.phone || undefined,
+          company: profile.company || undefined,
+          department: profile.department || undefined,
+          vendorId: profile.vendorId || null
+        } as DirectoryUser;
+      });
       const filtered = filterUsersForDirectory(mapped, {
         role: roleParsed?.success ? roleParsed.data : undefined,
         isActive,

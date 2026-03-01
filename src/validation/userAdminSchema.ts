@@ -31,7 +31,8 @@ export const updateUserAdminSchema = z
     role: userRoleSchema.optional(),
     company: z.string().trim().max(120).nullable().optional(),
     phone: z.string().trim().max(30).nullable().optional(),
-    department: z.string().trim().max(120).nullable().optional()
+    department: z.string().trim().max(120).nullable().optional(),
+    vendorId: z.string().trim().min(1).nullable().optional()
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar'

@@ -22,8 +22,20 @@ function toDirectoryUser(user: any): DirectoryUser {
     name: user.displayName || user.email?.split('@')[0] || 'Usuario',
     role: normalizeRole(user.customClaims?.role),
     phone: user.phoneNumber || undefined,
-    isActive: !user.disabled
+    isActive: !user.disabled,
+    vendorId: null
   };
+}
+
+async function loadProfilesByUid(uids: string[]) {
+  const docs = await Promise.all(
+    uids.map((uid) => collectionRef('userProfiles').doc(uid).get().catch(() => null))
+  );
+  const map = new Map<string, any>();
+  docs.forEach((doc, idx) => {
+    if (doc?.exists) map.set(uids[idx], doc.data() || {});
+  });
+  return map;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -56,7 +68,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const app = getFirebaseApp();
     const list = await app.auth().listUsers(1000);
-    let users = list.users.map(toDirectoryUser).filter((u) => u.role === parsedRole.data);
+    const profileMap = await loadProfilesByUid(list.users.map((u) => u.uid));
+    let users = list.users
+      .map((user) => {
+        const base = toDirectoryUser(user);
+        const profile = profileMap.get(user.uid) || {};
+        return {
+          ...base,
+          phone: base.phone || profile.phone || undefined,
+          company: profile.company || undefined,
+          department: profile.department || undefined,
+          vendorId: profile.vendorId || null
+        } as DirectoryUser;
+      })
+      .filter((u) => u.role === parsedRole.data);
 
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const isActive = parseOptionalBoolean(req.query.isActive);
@@ -70,18 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const assignedSalesRep = typeof req.query.vendorId === 'string' ? req.query.vendorId : undefined;
 
     if (parsedRole.data === 'socio' && assignedSalesRep) {
-      const customersSnapshot = await collectionRef('customers')
-        .where('assignedSalesRep', '==', assignedSalesRep)
-        .where('status', '==', 'activo')
-        .get();
-
-      const allowedEmails = new Set(
-        customersSnapshot.docs
-          .map((doc) => doc.data()?.email)
-          .filter((email): email is string => typeof email === 'string' && email.length > 0)
-      );
-
-      users = users.filter((u) => allowedEmails.has(u.email));
+      users = users.filter((u) => u.vendorId === assignedSalesRep);
     }
 
     const { page, pageSize } = parsePagination(req.query as Record<string, string>);

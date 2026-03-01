@@ -28,6 +28,11 @@
 - Endpoint `GET /api/search` (scope `catalog|global`) para búsqueda global por nombre/código/marca/categoría y entidades comerciales autenticadas.
 - Contrato OpenAPI congelado en `docs/openapi.v1.yaml`.
 - Runbook y checklist operativo en `docs/GO_LIVE_RUNBOOK.md` + `scripts/smoke-api.sh`.
+- Gestión de cartera de socios en usuarios:
+  - `PUT /api/users/:id` acepta `vendorId`.
+  - Validación de `vendorId` contra usuarios con rol `vendedor`.
+  - `GET /api/users` y `GET /api/users/role/socio?vendorId=...` exponen/filtran `vendorId`.
+  - Auditoría transaccional de reasignación (`before/after`, actor, requestId, ip, userAgent).
 
 ### Changed
 - Documentación de contrato Front↔Backend actualizada con endpoints admin.

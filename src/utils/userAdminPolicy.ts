@@ -9,6 +9,7 @@ export type DirectoryUser = {
   phone?: string;
   company?: string;
   department?: string;
+  vendorId?: string | null;
 };
 
 export type UserDirectoryFilters = {

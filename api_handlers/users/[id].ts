@@ -19,8 +19,49 @@ function toPublicUser(user: any, profile?: any) {
     phone: user.phoneNumber || profile?.phone,
     company: profile?.company,
     department: profile?.department,
+    vendorId: profile?.vendorId || null,
     isActive: !user.disabled
   };
+}
+
+function getClientIp(req: VercelRequest): string | null {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string') {
+    return forwardedFor.split(',')[0]?.trim() || null;
+  }
+  return (req.headers['x-real-ip'] as string | undefined) || null;
+}
+
+async function ensureVendorExists(vendorId: string) {
+  const app = getFirebaseApp();
+  try {
+    const vendor = await app.auth().getUser(vendorId);
+    const role = normalizeRole(vendor.customClaims?.role);
+    if (role !== 'vendedor') {
+      return { ok: false as const, reason: 'INVALID_ROLE' };
+    }
+    return { ok: true as const, user: vendor };
+  } catch (error) {
+    const code = (error as any)?.code;
+    if (code === 'auth/user-not-found') {
+      return { ok: false as const, reason: 'NOT_FOUND' };
+    }
+    throw error;
+  }
+}
+
+async function getUserByIdSafe(userId: string) {
+  const app = getFirebaseApp();
+  try {
+    const user = await app.auth().getUser(userId);
+    return { ok: true as const, user };
+  } catch (error) {
+    const code = (error as any)?.code;
+    if (code === 'auth/user-not-found') {
+      return { ok: false as const };
+    }
+    throw error;
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -40,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const app = getFirebaseApp();
-    const actor = (req as any).user as { uid: string; role?: string };
+    const actor = (req as any).user as { uid: string; role?: string; email?: string };
 
     if (req.method === 'GET') {
       const isAuthorized = requireRole(req, res, ['root', 'admin']);
@@ -49,7 +90,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
       }
 
-      const user = await app.auth().getUser(id);
+      const userResult = await getUserByIdSafe(id);
+      if (!userResult.ok) {
+        requestLogger.end(404);
+        return fail(res, 'Usuario no encontrado', 404, undefined, 'NOT_FOUND');
+      }
+      const user = userResult.user;
       const profileDoc = await collectionRef('userProfiles').doc(id).get();
       const profile = profileDoc.exists ? profileDoc.data() : {};
 
@@ -76,10 +122,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, 'No puedes remover tu propio rol root', 400);
       }
 
-      const currentUser = await app.auth().getUser(id);
+      const currentUserResult = await getUserByIdSafe(id);
+      if (!currentUserResult.ok) {
+        requestLogger.end(404);
+        return fail(res, 'Usuario no encontrado', 404, undefined, 'NOT_FOUND');
+      }
+      const currentUser = currentUserResult.user;
       const currentProfileDoc = await collectionRef('userProfiles').doc(id).get();
       const currentProfile = currentProfileDoc.exists ? currentProfileDoc.data() : {};
       const beforeUser = toPublicUser(currentUser, currentProfile);
+      const currentRole = normalizeRole(currentUser.customClaims?.role);
+      const nextRole = updates.role || currentRole;
+
+      // Política de cartera:
+      // - socio => vendorId obligatorio y debe ser vendedor válido.
+      // - no socio => vendorId se limpia.
+      let nextVendorId: string | null = null;
+      if (nextRole === 'socio') {
+        if (!updates.vendorId && !currentProfile?.vendorId) {
+          requestLogger.end(400);
+          return fail(
+            res,
+            'vendorId es obligatorio para usuarios con rol socio',
+            400,
+            undefined,
+            'VALIDATION_ERROR'
+          );
+        }
+        nextVendorId = updates.vendorId !== undefined ? updates.vendorId : currentProfile?.vendorId || null;
+        if (!nextVendorId) {
+          requestLogger.end(400);
+          return fail(
+            res,
+            'vendorId es obligatorio para usuarios con rol socio',
+            400,
+            undefined,
+            'VALIDATION_ERROR'
+          );
+        }
+        const vendorValidation = await ensureVendorExists(nextVendorId);
+        if (!vendorValidation.ok) {
+          if (vendorValidation.reason === 'NOT_FOUND') {
+            requestLogger.end(404);
+            return fail(res, 'Vendedor no encontrado', 404, undefined, 'NOT_FOUND');
+          }
+          requestLogger.end(400);
+          return fail(res, 'vendorId debe pertenecer a un usuario con rol vendedor', 400, undefined, 'VALIDATION_ERROR');
+        }
+      }
+
       const authPayload: Record<string, unknown> = {};
 
       if (updates.name) authPayload.displayName = updates.name;
@@ -104,25 +195,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (updates.company !== undefined) profileUpdate.company = updates.company;
       if (updates.phone !== undefined) profileUpdate.phone = updates.phone;
       if (updates.department !== undefined) profileUpdate.department = updates.department;
+      profileUpdate.vendorId = nextRole === 'socio' ? nextVendorId : null;
 
-      await collectionRef('userProfiles').doc(id).set(
-        {
-          uid: id,
-          ...profileUpdate
-        },
-        { merge: true }
-      );
+      // Integridad transaccional: perfil + auditoría en una sola transacción de Firestore.
+      const db = collectionRef('userProfiles').firestore;
+      const profileRef = collectionRef('userProfiles').doc(id);
+      const auditRef = collectionRef('auditLogs').doc();
+      const requestId = (req as any).requestId || null;
+      const ip = getClientIp(req);
+      const userAgent = (req.headers['user-agent'] as string | undefined) || null;
+      const actorRole = normalizeRole(actor.role);
+
+      await db.runTransaction(async (tx) => {
+        tx.set(
+          profileRef,
+          {
+            uid: id,
+            ...profileUpdate
+          },
+          { merge: true }
+        );
+
+        tx.set(auditRef, {
+          action: 'user.updated',
+          targetType: 'user',
+          targetId: id,
+          metadata: {
+            fields: Object.keys(updates),
+            before: beforeUser,
+            after: {
+              ...beforeUser,
+              name: updates.name !== undefined ? updates.name : beforeUser.name,
+              email: updates.email !== undefined ? updates.email : beforeUser.email,
+              role: nextRole,
+              phone: updates.phone !== undefined ? updates.phone : beforeUser.phone,
+              company: updates.company !== undefined ? updates.company : beforeUser.company,
+              department: updates.department !== undefined ? updates.department : beforeUser.department,
+              vendorId: nextRole === 'socio' ? nextVendorId : null
+            },
+            vendorAssignment: {
+              before: beforeUser.vendorId || null,
+              after: nextRole === 'socio' ? nextVendorId : null
+            }
+          },
+          actorId: actor?.uid || null,
+          actorEmail: actor?.email || null,
+          actorRole,
+          ip,
+          userAgent,
+          requestId,
+          createdAt: nowTimestamp()
+        });
+      });
 
       const updated = await app.auth().getUser(id);
       const profileDoc = await collectionRef('userProfiles').doc(id).get();
       const profile = profileDoc.exists ? profileDoc.data() : {};
       const afterUser = toPublicUser(updated, profile);
-
-      await writeUserAuditLog(req, 'user.updated', id, {
-        fields: Object.keys(updates),
-        before: beforeUser,
-        after: afterUser
-      });
 
       requestLogger.end(200);
       return ok(res, { user: afterUser });
@@ -140,7 +269,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return fail(res, 'No puedes eliminar tu propio usuario root', 400);
       }
 
-      const currentUser = await app.auth().getUser(id);
+      const currentUserResult = await getUserByIdSafe(id);
+      if (!currentUserResult.ok) {
+        requestLogger.end(404);
+        return fail(res, 'Usuario no encontrado', 404, undefined, 'NOT_FOUND');
+      }
+      const currentUser = currentUserResult.user;
       const currentProfileDoc = await collectionRef('userProfiles').doc(id).get();
       const currentProfile = currentProfileDoc.exists ? currentProfileDoc.data() : {};
       const beforeUser = toPublicUser(currentUser, currentProfile);

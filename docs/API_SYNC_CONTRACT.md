@@ -114,6 +114,9 @@ Fecha: 2026-03-01.
 - `PUT /api/users/:id`
   - Permiso: `root`
   - Anti-escalación aplicada (protección de root actual)
+  - Regla de cartera:
+    - Si `role='socio'`, `vendorId` es obligatorio y debe referenciar un usuario `vendedor`.
+    - Si rol distinto de `socio`, `vendorId` se limpia.
 
 - `PATCH /api/users/:id/status`
   - Permiso: `root`
@@ -133,6 +136,7 @@ Fecha: 2026-03-01.
 - `GET /api/users/role/:role`
   - Permiso: `root|admin`
   - Respuesta estándar de listado (`items,total,page,pageSize,totalPages`)
+  - Para `role=socio`, soporta filtro `vendorId` sobre asignación de cartera.
 
 ## 7) Auditoría
 - Colección: `auditLogs`

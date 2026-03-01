@@ -37,6 +37,13 @@ import supportRequestsHandler from '../api_handlers/support-requests/index';
 import supportRequestByIdHandler from '../api_handlers/support-requests/[id]';
 
 import contactMessagesHandler from '../api_handlers/contact-messages/index';
+import adminKpisHandler from '../api_handlers/admin/kpis';
+import adminClientsHandler from '../api_handlers/admin/clients';
+import adminOperationsHandler from '../api_handlers/admin/operations';
+import adminPendingApprovalsHandler from '../api_handlers/admin/approvals/pending';
+import adminExportExecutiveHandler from '../api_handlers/admin/exports/executive';
+import adminExportOrdersHandler from '../api_handlers/admin/exports/orders';
+import adminExportClientsHandler from '../api_handlers/admin/exports/clients';
 import usersHandler from '../api_handlers/users/index';
 import usersSummaryViewHandler from '../api_handlers/users/views/summary';
 import userByIdHandler from '../api_handlers/users/[id]';
@@ -107,6 +114,13 @@ const routes: Route[] = [
   { pattern: /^\/api\/support-requests\/([^/]+)$/, handler: supportRequestByIdHandler, params: ['id'] },
 
   { pattern: /^\/api\/contact-messages$/, handler: contactMessagesHandler },
+  { pattern: /^\/api\/admin\/kpis$/, handler: adminKpisHandler },
+  { pattern: /^\/api\/admin\/clients$/, handler: adminClientsHandler },
+  { pattern: /^\/api\/admin\/operations$/, handler: adminOperationsHandler },
+  { pattern: /^\/api\/admin\/approvals\/pending$/, handler: adminPendingApprovalsHandler },
+  { pattern: /^\/api\/admin\/exports\/executive$/, handler: adminExportExecutiveHandler },
+  { pattern: /^\/api\/admin\/exports\/orders$/, handler: adminExportOrdersHandler },
+  { pattern: /^\/api\/admin\/exports\/clients$/, handler: adminExportClientsHandler },
   { pattern: /^\/api\/users\/views\/summary$/, handler: usersSummaryViewHandler },
   { pattern: /^\/api\/users\/role\/([^/]+)$/, handler: usersByRoleHandler, params: ['role'] },
   { pattern: /^\/api\/users\/([^/]+)\/audit$/, handler: userAuditHandler, params: ['id'] },

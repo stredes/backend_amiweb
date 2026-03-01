@@ -146,6 +146,37 @@ Fecha: 2026-03-01.
   - `metadata` (before/after cuando aplique)
   - `createdAt`, `createdAtIso`
 
+## 7.1) Endpoints de panel admin (dueño/administrativo)
+
+- `GET /api/admin/kpis`
+  - Permiso: `root|admin`
+  - Resumen ejecutivo: ingresos mes, pedidos mes, ticket promedio, tasa de cumplimiento, distribución por estado.
+
+- `GET /api/admin/clients`
+  - Permiso: `root|admin`
+  - Query: `limit` (1..100)
+  - Respuesta: cartera/top clientes por facturación y frecuencia.
+
+- `GET /api/admin/operations`
+  - Permiso: `root|admin`
+  - Respuesta: pendientes operativos, aprobaciones en revisión, despachos pendientes de aprobación, en tránsito, usuarios inactivos.
+
+- `GET /api/admin/approvals/pending`
+  - Permiso: `root|admin`
+  - Respuesta: cola unificada de aprobaciones pendientes (cotizaciones + despacho).
+
+- `GET /api/admin/exports/executive`
+  - Permiso: `root|admin`
+  - Descarga CSV de reporte ejecutivo.
+
+- `GET /api/admin/exports/orders`
+  - Permiso: `root|admin`
+  - Descarga CSV de pedidos.
+
+- `GET /api/admin/exports/clients`
+  - Permiso: `root|admin`
+  - Descarga CSV de cartera de clientes.
+
 ## 8) Paginación, filtros y orden
 
 ### Estándar de listados

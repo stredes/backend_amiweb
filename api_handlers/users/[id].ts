@@ -104,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PUT') {
-      const isAuthorized = requireRole(req, res, ['root']);
+      const isAuthorized = requireRole(req, res, ['root', 'admin']);
       if (!isAuthorized) {
         requestLogger.end(403);
         return;
@@ -117,6 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const updates = parsed.data;
+      const actorRole = normalizeRole(actor.role);
       if (actor.uid === id && updates.role && updates.role !== 'root') {
         requestLogger.end(400);
         return fail(res, 'No puedes remover tu propio rol root', 400);
@@ -133,6 +134,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const beforeUser = toPublicUser(currentUser, currentProfile);
       const currentRole = normalizeRole(currentUser.customClaims?.role);
       const nextRole = updates.role || currentRole;
+
+      // Admin puede gestionar cartera (vendorId) de socios, pero no mutaciones sensibles.
+      if (actorRole === 'admin') {
+        const allowedForAdmin = new Set(['vendorId']);
+        const updateKeys = Object.keys(updates);
+        const hasDisallowedField = updateKeys.some((key) => !allowedForAdmin.has(key));
+        if (hasDisallowedField) {
+          requestLogger.end(403);
+          return fail(
+            res,
+            'No tienes permisos para editar estos campos. Admin solo puede reasignar cartera.',
+            403,
+            undefined,
+            'FORBIDDEN'
+          );
+        }
+
+        if (currentRole !== 'socio' || nextRole !== 'socio') {
+          requestLogger.end(403);
+          return fail(
+            res,
+            'Solo se permite reasignar cartera de usuarios socio.',
+            403,
+            undefined,
+            'FORBIDDEN'
+          );
+        }
+      }
 
       // Política de cartera:
       // - socio => vendorId obligatorio y debe ser vendedor válido.
@@ -204,7 +233,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const requestId = (req as any).requestId || null;
       const ip = getClientIp(req);
       const userAgent = (req.headers['user-agent'] as string | undefined) || null;
-      const actorRole = normalizeRole(actor.role);
 
       await db.runTransaction(async (tx) => {
         tx.set(

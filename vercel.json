@@ -1,14 +1,9 @@
 {
   "version": 2,
-  "devCommand": null,
   "rewrites": [
     {
       "source": "/",
       "destination": "/api"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/api/$1"
     }
   ]
 }

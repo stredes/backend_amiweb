@@ -5,6 +5,8 @@ export type UserRole =
   | 'admin'         // Administrador general
   | 'vendedor'      // Vendedor / Ejecutivo comercial
   | 'bodega'        // Personal de bodega / Preparador de pedidos
+  | 'callcenter'    // Personal de call center
+  | 'soporte'       // Personal técnico/soporte
   | 'socio'         // Socio / Cliente premium
   | 'cliente';      // Cliente regular
 
@@ -71,6 +73,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'products.read',
     'inventory.read',
     'inventory.write'
+  ],
+  callcenter: [
+    'orders.read',
+    'orders.write',
+    'quotes.read',
+    'quotes.write',
+    'customers.read'
+  ],
+  soporte: [
+    'orders.read',
+    'products.read',
+    'customers.read'
   ],
   socio: [
     'orders.read',

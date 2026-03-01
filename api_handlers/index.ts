@@ -33,6 +33,9 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
     endpoints: {
       health: '/api/health',
       metadata: '/api/metadata',
+      auth: {
+        me: 'GET /api/auth/me'
+      },
       categories: {
         list: 'GET /api/categories',
         get: 'GET /api/categories/{id}',
@@ -57,6 +60,16 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
       contact: {
         list: 'GET /api/contact-messages',
         create: 'POST /api/contact-messages'
+      },
+      users: {
+        list: 'GET /api/users',
+        create: 'POST /api/users',
+        get: 'GET /api/users/{id}',
+        update: 'PUT /api/users/{id}',
+        delete: 'DELETE /api/users/{id}',
+        byRole: 'GET /api/users/role/{role}',
+        status: 'PATCH /api/users/{id}/status',
+        resetPassword: 'POST /api/users/{id}/reset-password'
       },
       inventory: {
         upload: 'POST /api/inventory/upload (requires auth)'

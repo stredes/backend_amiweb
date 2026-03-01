@@ -4,6 +4,7 @@ import { fail } from '../src/utils/responses';
 import indexHandler from '../api_handlers/index';
 import healthHandler from '../api_handlers/health';
 import metadataHandler from '../api_handlers/metadata';
+import authMeHandler from '../api_handlers/auth/me';
 
 import ordersHandler from '../api_handlers/orders/index';
 import orderByIdHandler from '../api_handlers/orders/[id]';
@@ -33,6 +34,11 @@ import supportRequestsHandler from '../api_handlers/support-requests/index';
 import supportRequestByIdHandler from '../api_handlers/support-requests/[id]';
 
 import contactMessagesHandler from '../api_handlers/contact-messages/index';
+import usersHandler from '../api_handlers/users/index';
+import userByIdHandler from '../api_handlers/users/[id]';
+import userStatusHandler from '../api_handlers/users/[id]/status';
+import userResetPasswordHandler from '../api_handlers/users/[id]/reset-password';
+import usersByRoleHandler from '../api_handlers/users/role/[role]';
 
 import warehouseStockHandler from '../api_handlers/warehouse/stock';
 import warehouseStockExportHandler from '../api_handlers/warehouse/stock/export';
@@ -62,6 +68,7 @@ const routes: Route[] = [
   { pattern: /^\/api$/, handler: indexHandler },
   { pattern: /^\/api\/health$/, handler: healthHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },
+  { pattern: /^\/api\/auth\/me$/, handler: authMeHandler },
 
   { pattern: /^\/api\/orders$/, handler: ordersHandler },
   { pattern: /^\/api\/orders\/([^/]+)$/, handler: orderByIdHandler, params: ['id'] },
@@ -91,6 +98,11 @@ const routes: Route[] = [
   { pattern: /^\/api\/support-requests\/([^/]+)$/, handler: supportRequestByIdHandler, params: ['id'] },
 
   { pattern: /^\/api\/contact-messages$/, handler: contactMessagesHandler },
+  { pattern: /^\/api\/users\/role\/([^/]+)$/, handler: usersByRoleHandler, params: ['role'] },
+  { pattern: /^\/api\/users\/([^/]+)\/status$/, handler: userStatusHandler, params: ['id'] },
+  { pattern: /^\/api\/users\/([^/]+)\/reset-password$/, handler: userResetPasswordHandler, params: ['id'] },
+  { pattern: /^\/api\/users\/([^/]+)$/, handler: userByIdHandler, params: ['id'] },
+  { pattern: /^\/api\/users$/, handler: usersHandler },
 
   { pattern: /^\/api\/warehouse\/stock\/export$/, handler: warehouseStockExportHandler },
   { pattern: /^\/api\/warehouse\/stock$/, handler: warehouseStockHandler },

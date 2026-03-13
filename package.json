@@ -10,7 +10,7 @@
   "scripts": {
     "start": "vercel dev --listen 3000",
     "type-check": "tsc --noEmit",
-    "test:unit": "npx ts-node tests/user-admin-policy.test.ts && npx ts-node tests/workflow-cycle.test.ts && npx ts-node tests/admin-dashboard.test.ts && npx ts-node tests/vendor-dashboard.test.ts",
+    "test:unit": "npx ts-node tests/user-admin-policy.test.ts && npx ts-node tests/workflow-cycle.test.ts && npx ts-node tests/admin-dashboard.test.ts && npx ts-node tests/vendor-dashboard.test.ts && npx ts-node tests/clawbot-service.test.ts",
     "smoke:api": "bash ./scripts/smoke-api.sh",
     "lint": "echo 'Add lint if needed.'",
     "create-users": "ts-node scripts/create-firebase-users.ts",

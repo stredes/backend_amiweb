@@ -33,6 +33,7 @@
   - Validación de `vendorId` contra usuarios con rol `vendedor`.
   - `GET /api/users` y `GET /api/users/role/socio?vendorId=...` exponen/filtran `vendorId`.
   - Auditoría transaccional de reasignación (`before/after`, actor, requestId, ip, userAgent).
+- `POST /api/assistant/chat` para consultas administrativas con IA en modo solo lectura, salida `answer + table + meta`.
 
 ### Changed
 - Documentación de contrato Front↔Backend actualizada con endpoints admin.

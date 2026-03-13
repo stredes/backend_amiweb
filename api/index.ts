@@ -8,6 +8,7 @@ import healthHandler from '../api_handlers/health';
 import readyHandler from '../api_handlers/ready';
 import metadataHandler from '../api_handlers/metadata';
 import searchHandler from '../api_handlers/search/index';
+import assistantChatHandler from '../api_handlers/assistant/chat';
 import authMeHandler from '../api_handlers/auth/me';
 
 import ordersHandler from '../api_handlers/orders/index';
@@ -96,6 +97,7 @@ const routes: Route[] = [
   { pattern: /^\/api\/ready$/, handler: readyHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },
   { pattern: /^\/api\/search$/, handler: searchHandler },
+  { pattern: /^\/api\/assistant\/chat$/, handler: assistantChatHandler },
   { pattern: /^\/api\/auth\/me$/, handler: authMeHandler },
 
   { pattern: /^\/api\/orders$/, handler: ordersHandler },

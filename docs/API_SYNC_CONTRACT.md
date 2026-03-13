@@ -253,6 +253,40 @@ Fecha: 2026-03-01.
   - Rol `vendedor` solo puede consultar y mutar recursos con `assignedSalesRep == user.uid`.
   - Acceso fuera de cartera: `403 FORBIDDEN`.
 
+## 9.2) Assistant Chat (admin read-only)
+
+- `POST /api/assistant/chat`
+  - Permiso: `admin|root`
+  - Modo: solo lectura
+  - Entrada:
+  ```json
+  {
+    "message": "muéstrame los pedidos pendientes de hoy",
+    "sessionId": "optional-session"
+  }
+  ```
+  - Salida:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "answer": "Resumen ejecutivo...",
+      "toolCalls": [],
+      "table": {
+        "columns": ["orderNumber", "status"],
+        "rows": []
+      },
+      "meta": {
+        "requestId": "uuid",
+        "sources": ["orders"],
+        "totalRows": 10
+      }
+    }
+  }
+  ```
+  - El backend usa OpenClaw si está disponible y fallback heurístico si falla.
+  - El asistente no puede ejecutar mutaciones.
+
 ## 10) Healthchecks
 - `GET /api/health`:
   - uso: disponibilidad base del backend

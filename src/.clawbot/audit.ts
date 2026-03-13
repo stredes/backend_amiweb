@@ -1,14 +1,16 @@
 import type { VercelRequest } from '@vercel/node';
 import { collectionRef, nowTimestamp } from '../lib/firestore';
 import { logger } from '../utils/logger';
-import type { ClawbotChatRequest, ClawbotChatResponse } from './types';
+import type { AdminAssistantQueryRequest, AdminAssistantQueryResponse } from './types';
 
 export async function writeClawbotAudit(
   req: VercelRequest,
   payload: {
-    request: ClawbotChatRequest;
-    response: ClawbotChatResponse;
-    toolCalls: Array<{ tool: string; input: Record<string, unknown> }>;
+    request: AdminAssistantQueryRequest;
+    response: AdminAssistantQueryResponse;
+    intent: string;
+    filters: Record<string, unknown>;
+    durationMs: number;
   }
 ) {
   try {
@@ -19,15 +21,18 @@ export async function writeClawbotAudit(
       requestId: (req as any).requestId || null,
       ip: req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || null,
       userAgent: req.headers['user-agent'] || null,
-      query: payload.request.message,
-      sessionId: payload.request.sessionId || null,
-      toolCalls: payload.toolCalls,
+      question: payload.request.question,
+      context: payload.request.context,
+      intent: payload.intent,
+      filters: payload.filters,
+      queryLabel: payload.response.queryLabel,
       answer: payload.response.answer,
-      meta: payload.response.meta || {},
+      rowCount: payload.response.rows.length,
+      durationMs: payload.durationMs,
       createdAt: nowTimestamp()
     });
   } catch (error) {
-    logger.warn('No se pudo guardar auditoria de Clawbot', {
+    logger.warn('No se pudo guardar auditoria de assistant query', {
       error: error instanceof Error ? error.message : String(error)
     });
   }

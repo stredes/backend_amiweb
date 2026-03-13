@@ -140,6 +140,25 @@ paths:
       summary: Aprobaciones pendientes
       responses:
         "200": { description: ok }
+  /api/admin/assistant/query:
+    post:
+      summary: Query de assistant admin read-only
+      responses:
+        "200": { description: ok }
+        "400": { description: unsupported or validation error }
+        "401": { description: token missing or invalid }
+        "403": { description: forbidden }
+        "429": { description: rate limited }
+  /api/admin/assistant/suggestions:
+    get:
+      summary: Suggestions de assistant admin
+      responses:
+        "200": { description: ok }
+  /api/admin/assistant/history:
+    get:
+      summary: Historial de assistant admin
+      responses:
+        "200": { description: ok }
   /api/vendor/kpis:
     get:
       summary: KPIs vendedor

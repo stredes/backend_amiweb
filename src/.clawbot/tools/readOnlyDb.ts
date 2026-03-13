@@ -1,210 +1,219 @@
 import { collectionRef } from '../../lib/firestore';
-import { computeExecutiveSummary, computeOperationalControl, computeTopClients } from '../../utils/adminDashboard';
 import { countInactiveUsers, readDashboardCollections } from '../../../api_handlers/admin/_shared';
-import { listNotifications } from '../../utils/notificationsReadOnly';
-import type { ClawbotToolCall, ClawbotToolName } from '../types';
+import type { AdminAssistantIntent } from '../types';
 
-export type ToolExecutionResult = {
-  tool: ClawbotToolName;
-  summary: string;
-  table?: {
-    columns: string[];
-    rows: Array<Record<string, unknown>>;
-  };
-  meta?: Record<string, unknown>;
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'object' && value && typeof (value as any).toDate === 'function') {
+    const d = (value as any).toDate();
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function periodRange(period: unknown) {
+  const now = new Date();
+  const end = new Date(now);
+  let start = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (period === 'today') {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  } else if (period === 'week') {
+    start = new Date(now);
+    start.setDate(now.getDate() - 7);
+  }
+  return { start, end };
+}
+
+function inRange(value: unknown, start: Date, end: Date) {
+  const d = toDate(value);
+  if (!d) return false;
+  return d.getTime() >= start.getTime() && d.getTime() <= end.getTime();
+}
+
+function round(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+export type AssistantQueryResult = {
+  answer: string;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  sources: string[];
 };
 
-const ALLOWED_COLLECTIONS = new Set([
-  'orders',
-  'quotes',
-  'customers',
-  'notifications',
-  'products',
-  'categories',
-  'userProfiles',
-  'auditLogs',
-  'orderPreparations'
-]);
+export async function executeAdminIntent(
+  intent: AdminAssistantIntent,
+  filters: Record<string, unknown>
+): Promise<AssistantQueryResult> {
+  const { start, end } = periodRange(filters.period);
 
-function normalize(value: unknown): string {
-  return String(value || '').toLowerCase().trim();
-}
-
-function contains(value: unknown, query: string): boolean {
-  return normalize(value).includes(query);
-}
-
-function toRows(items: any[], fields?: string[]) {
-  if (items.length === 0) return { columns: [], rows: [] as Array<Record<string, unknown>> };
-  const columns = fields && fields.length > 0 ? fields : Object.keys(items[0]).slice(0, 8);
-  const rows = items.map((item) => {
-    const row: Record<string, unknown> = {};
-    columns.forEach((column) => {
-      const value = item[column];
-      row[column] = typeof value === 'object' && value && typeof value.toDate === 'function'
-        ? value.toDate().toISOString()
-        : value;
-    });
-    return row;
-  });
-  return { columns, rows };
-}
-
-async function executeCollectionQuery(input: Record<string, unknown>): Promise<ToolExecutionResult> {
-  const collection = typeof input.collection === 'string' ? input.collection : '';
-  const query = typeof input.query === 'string' ? input.query.trim().toLowerCase() : '';
-  const limit = typeof input.limit === 'number' ? Math.min(Math.max(input.limit, 1), 100) : 20;
-  const fields = Array.isArray(input.fields) ? input.fields.filter((v): v is string => typeof v === 'string') : undefined;
-
-  if (!ALLOWED_COLLECTIONS.has(collection)) {
-    throw new Error(`Coleccion no permitida: ${collection}`);
+  if (intent === 'sales_by_period') {
+    const { orders } = await readDashboardCollections();
+    const grouped = new Map<string, number>();
+    orders
+      .filter((order: any) => order.status !== 'cancelado')
+      .filter((order: any) => inRange(order.createdAt, start, end))
+      .forEach((order: any) => {
+        const date = toDate(order.createdAt);
+        const key = date ? date.toISOString().slice(0, 10) : 'sin_fecha';
+        grouped.set(key, (grouped.get(key) || 0) + Number(order.total || 0));
+      });
+    const rows = [...grouped.entries()]
+      .map(([periodo, ventas]) => ({ periodo, ventas: round(ventas) }))
+      .sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+    return {
+      answer: `Se encontraron ${rows.length} periodos con ventas en el rango consultado.`,
+      columns: ['periodo', 'ventas'],
+      rows,
+      sources: ['orders']
+    };
   }
 
-  const snapshot = await collectionRef(collection).limit(500).get();
-  let items = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
-  if (query) {
-    items = items.filter((item) =>
-      Object.values(item).some((value) => {
-        if (typeof value === 'string' || typeof value === 'number') return contains(value, query);
-        return false;
+  if (intent === 'sales_by_vendor') {
+    const { orders } = await readDashboardCollections();
+    const grouped = new Map<string, number>();
+    orders
+      .filter((order: any) => order.status !== 'cancelado')
+      .filter((order: any) => inRange(order.createdAt, start, end))
+      .forEach((order: any) => {
+        const vendor = String(order.assignedSalesRepName || order.assignedSalesRep || 'Sin vendedor');
+        grouped.set(vendor, (grouped.get(vendor) || 0) + Number(order.total || 0));
+      });
+    const rows = [...grouped.entries()]
+      .map(([vendedor, ventas]) => ({ vendedor, ventas: round(ventas) }))
+      .sort((a, b) => Number(b.ventas) - Number(a.ventas));
+    const leader = rows[0]?.vendedor;
+    return {
+      answer: leader
+        ? `Las ventas del periodo muestran a ${leader} liderando.`
+        : 'No se encontraron ventas para el periodo consultado.',
+      columns: ['vendedor', 'ventas'],
+      rows,
+      sources: ['orders']
+    };
+  }
+
+  if (intent === 'orders_by_status') {
+    const { orders } = await readDashboardCollections();
+    const grouped = new Map<string, number>();
+    orders
+      .filter((order: any) => inRange(order.createdAt, start, end))
+      .forEach((order: any) => {
+        const status = String(order.status || 'sin_estado');
+        grouped.set(status, (grouped.get(status) || 0) + 1);
+      });
+    const rows = [...grouped.entries()].map(([estado, pedidos]) => ({ estado, pedidos }));
+    return {
+      answer: `Se consolidaron ${rows.length} estados de pedidos para el periodo consultado.`,
+      columns: ['estado', 'pedidos'],
+      rows,
+      sources: ['orders']
+    };
+  }
+
+  if (intent === 'inactive_clients') {
+    const [customersSnapshot, ordersSnapshot] = await Promise.all([
+      collectionRef('customers').limit(1000).get(),
+      collectionRef('orders').limit(3000).get()
+    ]);
+    const customers = customersSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
+    const orders = ordersSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
+    const rows = customers
+      .map((customer: any) => {
+        const email = String(customer.email || '').toLowerCase();
+        const customerOrders: any[] = orders
+          .filter((order: any) => String(order.customerEmail || '').toLowerCase() === email)
+          .sort((a: any, b: any) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
+        const lastOrderAt = customerOrders[0] ? toDate(customerOrders[0].createdAt)?.toISOString() || null : null;
+        const isInactive = !customerOrders[0] || !inRange(customerOrders[0].createdAt, start, end);
+        return {
+          cliente: customer.name || customer.email || customer.id,
+          email: customer.email || '',
+          empresa: customer.company || '',
+          lastOrderAt,
+          isInactive
+        };
       })
-    );
+      .filter((row) => row.isInactive)
+      .map(({ isInactive, ...rest }) => rest);
+    return {
+      answer: `Se detectaron ${rows.length} clientes sin compras recientes en el periodo evaluado.`,
+      columns: ['cliente', 'email', 'empresa', 'lastOrderAt'],
+      rows,
+      sources: ['customers', 'orders']
+    };
   }
-  const sliced = items.slice(0, limit);
-  const table = toRows(sliced, fields);
-  return {
-    tool: 'collection_query',
-    summary: `${sliced.length} resultados en ${collection}`,
-    table,
-    meta: { collection, query, totalRows: sliced.length }
-  };
-}
 
-async function executeSearchCatalog(input: Record<string, unknown>): Promise<ToolExecutionResult> {
-  const query = typeof input.query === 'string' ? input.query.trim().toLowerCase() : '';
-  const limit = typeof input.limit === 'number' ? Math.min(Math.max(input.limit, 1), 100) : 20;
-  const [productsSnapshot, categoriesSnapshot] = await Promise.all([
-    collectionRef('products').limit(1000).get(),
-    collectionRef('categories').limit(500).get()
-  ]);
-  const categories: any[] = categoriesSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
-  const categoryNameById = new Map(categories.map((category) => [String(category.id), String(category.name || '')]));
-  const items: Array<Record<string, unknown>> = (productsSnapshot.docs
-    .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }))
-    .filter((product: any) => product.isActive !== false)
-    .filter((product: any) =>
-      contains(product.name, query) ||
-      contains(product.brand, query) ||
-      contains(product.code, query) ||
-      contains(categoryNameById.get(String(product.categoryId || '')), query)
-    )
-    .slice(0, limit)
-    .map((product: any) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      code: product.code,
-      categoryName: categoryNameById.get(String(product.categoryId || '')) || null
-    }))) as Array<Record<string, unknown>>;
-
-  return {
-    tool: 'search_catalog',
-    summary: `${items.length} productos encontrados`,
-    table: {
-      columns: ['id', 'name', 'brand', 'code', 'categoryName'],
-      rows: items
-    },
-    meta: { query, totalRows: items.length, sources: ['products', 'categories'] }
-  };
-}
-
-async function executeAdminKpis(): Promise<ToolExecutionResult> {
-  const { orders } = await readDashboardCollections();
-  const summary = computeExecutiveSummary(orders);
-  return {
-    tool: 'get_admin_kpis',
-    summary: 'KPIs ejecutivos calculados',
-    table: {
-      columns: ['metric', 'value'],
-      rows: [
-        { metric: 'revenueMonth', value: summary.revenueMonth },
-        { metric: 'ordersMonth', value: summary.ordersMonth },
-        { metric: 'averageTicket', value: summary.averageTicket },
-        { metric: 'fulfillmentRate', value: summary.fulfillmentRate }
-      ]
-    },
-    meta: { period: summary.period, totalRows: 4, sources: ['orders'] }
-  };
-}
-
-async function executeAdminClients(input: Record<string, unknown>): Promise<ToolExecutionResult> {
-  const limit = typeof input.limit === 'number' ? Math.min(Math.max(input.limit, 1), 100) : 10;
-  const { orders } = await readDashboardCollections();
-  const items = computeTopClients(orders, limit);
-  return {
-    tool: 'get_admin_clients',
-    summary: `${items.length} clientes principales`,
-    table: {
-      columns: ['customerName', 'organization', 'orderCount', 'totalInvoiced'],
-      rows: items
-    },
-    meta: { totalRows: items.length, sources: ['orders'] }
-  };
-}
-
-async function executeAdminOperations(): Promise<ToolExecutionResult> {
-  const [{ orders, quotes, preparations }, inactiveUsers] = await Promise.all([
-    readDashboardCollections(),
-    countInactiveUsers()
-  ]);
-  const metrics = computeOperationalControl(orders, quotes, preparations, inactiveUsers);
-  return {
-    tool: 'get_admin_operations',
-    summary: 'Control operativo consolidado',
-    table: {
-      columns: Object.keys(metrics),
-      rows: [metrics]
-    },
-    meta: { totalRows: 1, sources: ['orders', 'quotes', 'orderPreparations', 'users'] }
-  };
-}
-
-async function executeNotifications(input: Record<string, unknown>): Promise<ToolExecutionResult> {
-  const limit = typeof input.limit === 'number' ? Math.min(Math.max(input.limit, 1), 100) : 20;
-  const unreadOnly = input.unreadOnly === true;
-  const items = await listNotifications(limit, unreadOnly);
-  return {
-    tool: 'get_notifications',
-    summary: `${items.length} notificaciones listadas`,
-    table: {
-      columns: ['id', 'userId', 'title', 'type', 'read'],
-      rows: items.map((item: any) => ({
-        id: item.id,
-        userId: item.userId,
-        title: item.title,
-        type: item.type,
-        read: item.read
-      }))
-    },
-    meta: { totalRows: items.length, unreadOnly, sources: ['notifications'] }
-  };
-}
-
-export async function executeToolCall(toolCall: ClawbotToolCall): Promise<ToolExecutionResult> {
-  switch (toolCall.tool) {
-    case 'collection_query':
-      return executeCollectionQuery(toolCall.input);
-    case 'search_catalog':
-      return executeSearchCatalog(toolCall.input);
-    case 'get_admin_kpis':
-      return executeAdminKpis();
-    case 'get_admin_clients':
-      return executeAdminClients(toolCall.input);
-    case 'get_admin_operations':
-      return executeAdminOperations();
-    case 'get_notifications':
-      return executeNotifications(toolCall.input);
-    default:
-      throw new Error(`Tool no soportada: ${toolCall.tool}`);
+  if (intent === 'portfolio_by_vendor') {
+    const [profilesSnapshot, appUsers] = await Promise.all([
+      collectionRef('userProfiles').limit(2000).get(),
+      collectionRef('userProfiles').firestore.collection('noop').limit(1).get().catch(() => null)
+    ]);
+    void appUsers;
+    const profiles = profilesSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }));
+    const vendorProfiles = profiles.filter((profile: any) => profile.role === 'vendedor');
+    const socios = profiles.filter((profile: any) => profile.role === 'socio');
+    const rows = vendorProfiles.map((vendor: any) => ({
+      vendedor: vendor.displayName || vendor.email || vendor.id,
+      cartera: socios.filter((socio: any) => socio.vendorId === vendor.uid || socio.vendorId === vendor.id).length
+    })).sort((a, b) => Number(b.cartera) - Number(a.cartera));
+    return {
+      answer: `Se consolidó la cartera de ${rows.length} vendedores.`,
+      columns: ['vendedor', 'cartera'],
+      rows,
+      sources: ['userProfiles']
+    };
   }
+
+  if (intent === 'top_products') {
+    const { orders } = await readDashboardCollections();
+    const grouped = new Map<string, number>();
+    orders
+      .filter((order: any) => order.status !== 'cancelado')
+      .filter((order: any) => inRange(order.createdAt, start, end))
+      .forEach((order: any) => {
+        const items = Array.isArray(order.items) ? order.items : [];
+        items.forEach((item: any) => {
+          const key = String(item.productName || item.productId || 'Sin producto');
+          grouped.set(key, (grouped.get(key) || 0) + Number(item.quantity || 0));
+        });
+      });
+    const rows = [...grouped.entries()]
+      .map(([producto, rotacion]) => ({ producto, rotacion }))
+      .sort((a, b) => Number(b.rotacion) - Number(a.rotacion))
+      .slice(0, 20);
+    return {
+      answer: `Se identificaron ${rows.length} productos con mayor rotación.`,
+      columns: ['producto', 'rotacion'],
+      rows,
+      sources: ['orders']
+    };
+  }
+
+  if (intent === 'operational_alerts') {
+    const [{ orders, quotes, preparations }, inactiveUsers] = await Promise.all([
+      readDashboardCollections(),
+      countInactiveUsers()
+    ]);
+    const rows = [
+      { alerta: 'Pedidos pendientes operativos', valor: orders.filter((o: any) => ['pendiente', 'confirmado', 'procesando'].includes(String(o.status || ''))).length },
+      { alerta: 'Cotizaciones en revisión', valor: quotes.filter((q: any) => ['aprobado_vendedor', 'en_revision_admin'].includes(String(q.status || ''))).length },
+      { alerta: 'Despachos pendientes aprobación', valor: preparations.filter((p: any) => p.inspectionStatus === 'approved' && (p.adminApprovalStatus === 'pending' || !p.adminApprovalStatus)).length },
+      { alerta: 'Pedidos en tránsito', valor: orders.filter((o: any) => o.status === 'enviado').length },
+      { alerta: 'Usuarios inactivos', valor: inactiveUsers }
+    ];
+    return {
+      answer: 'Se consolidaron alertas operativas y de inventario para seguimiento administrativo.',
+      columns: ['alerta', 'valor'],
+      rows,
+      sources: ['orders', 'quotes', 'orderPreparations', 'userProfiles']
+    };
+  }
+
+  throw new Error(`Intent no soportado: ${intent}`);
 }

@@ -8,7 +8,6 @@ import healthHandler from '../api_handlers/health';
 import readyHandler from '../api_handlers/ready';
 import metadataHandler from '../api_handlers/metadata';
 import searchHandler from '../api_handlers/search/index';
-import assistantChatHandler from '../api_handlers/assistant/chat';
 import authMeHandler from '../api_handlers/auth/me';
 
 import ordersHandler from '../api_handlers/orders/index';
@@ -46,6 +45,9 @@ import adminPendingApprovalsHandler from '../api_handlers/admin/approvals/pendin
 import adminExportExecutiveHandler from '../api_handlers/admin/exports/executive';
 import adminExportOrdersHandler from '../api_handlers/admin/exports/orders';
 import adminExportClientsHandler from '../api_handlers/admin/exports/clients';
+import adminAssistantQueryHandler from '../api_handlers/admin/assistant/query';
+import adminAssistantSuggestionsHandler from '../api_handlers/admin/assistant/suggestions';
+import adminAssistantHistoryHandler from '../api_handlers/admin/assistant/history';
 import usersHandler from '../api_handlers/users/index';
 import usersSummaryViewHandler from '../api_handlers/users/views/summary';
 import userByIdHandler from '../api_handlers/users/[id]';
@@ -97,7 +99,6 @@ const routes: Route[] = [
   { pattern: /^\/api\/ready$/, handler: readyHandler },
   { pattern: /^\/api\/metadata$/, handler: metadataHandler },
   { pattern: /^\/api\/search$/, handler: searchHandler },
-  { pattern: /^\/api\/assistant\/chat$/, handler: assistantChatHandler },
   { pattern: /^\/api\/auth\/me$/, handler: authMeHandler },
 
   { pattern: /^\/api\/orders$/, handler: ordersHandler },
@@ -136,6 +137,9 @@ const routes: Route[] = [
   { pattern: /^\/api\/admin\/exports\/executive$/, handler: adminExportExecutiveHandler },
   { pattern: /^\/api\/admin\/exports\/orders$/, handler: adminExportOrdersHandler },
   { pattern: /^\/api\/admin\/exports\/clients$/, handler: adminExportClientsHandler },
+  { pattern: /^\/api\/admin\/assistant\/query$/, handler: adminAssistantQueryHandler },
+  { pattern: /^\/api\/admin\/assistant\/suggestions$/, handler: adminAssistantSuggestionsHandler },
+  { pattern: /^\/api\/admin\/assistant\/history$/, handler: adminAssistantHistoryHandler },
   { pattern: /^\/api\/users\/views\/summary$/, handler: usersSummaryViewHandler },
   { pattern: /^\/api\/users\/role\/([^/]+)$/, handler: usersByRoleHandler, params: ['role'] },
   { pattern: /^\/api\/users\/([^/]+)\/audit$/, handler: userAuditHandler, params: ['id'] },

@@ -1,30 +1,118 @@
-import type { ClawbotToolCall } from './types';
+import type { AdminAssistantIntent, AssistantSuggestion } from './types';
 
-export function inferFallbackToolCalls(message: string): ClawbotToolCall[] {
-  const text = message.toLowerCase();
-  if (text.includes('kpi') || text.includes('ventas') || text.includes('ticket')) {
-    return [{ tool: 'get_admin_kpis', input: {} }];
+export type AssistantPlan = {
+  intent: AdminAssistantIntent;
+  queryLabel: string;
+  filters: Record<string, unknown>;
+};
+
+function parsePeriod(question: string): 'today' | 'week' | 'month' {
+  const text = question.toLowerCase();
+  if (text.includes('hoy') || text.includes('dia')) return 'today';
+  if (text.includes('semana')) return 'week';
+  return 'month';
+}
+
+export function inferAssistantPlan(question: string): AssistantPlan | null {
+  const text = question.toLowerCase();
+  const period = parsePeriod(question);
+
+  if (text.includes('ventas') && text.includes('vendedor')) {
+    return {
+      intent: 'sales_by_vendor',
+      queryLabel: `Ventas del ${period === 'today' ? 'dia' : period === 'week' ? 'periodo semanal' : 'mes'} por vendedor`,
+      filters: { period }
+    };
   }
-  if (text.includes('cliente') || text.includes('cartera')) {
-    return [{ tool: 'get_admin_clients', input: { limit: 10 } }];
+
+  if (text.includes('ventas') || text.includes('facturacion') || text.includes('ingresos')) {
+    return {
+      intent: 'sales_by_period',
+      queryLabel: `Ventas por periodo (${period})`,
+      filters: { period }
+    };
   }
-  if (text.includes('operacion') || text.includes('bodega') || text.includes('transito')) {
-    return [{ tool: 'get_admin_operations', input: {} }];
+
+  if (text.includes('pedido') || text.includes('orden') || text.includes('estado')) {
+    return {
+      intent: 'orders_by_status',
+      queryLabel: 'Pedidos por estado',
+      filters: { period }
+    };
   }
-  if (text.includes('notific')) {
-    return [{ tool: 'get_notifications', input: { limit: 20, unreadOnly: false } }];
+
+  if ((text.includes('cliente') || text.includes('cartera')) && (text.includes('inactivo') || text.includes('sin compra'))) {
+    return {
+      intent: 'inactive_clients',
+      queryLabel: 'Clientes inactivos',
+      filters: { period }
+    };
   }
-  if (text.includes('producto') || text.includes('categoria') || text.includes('catalog')) {
-    return [{ tool: 'search_catalog', input: { query: message, limit: 20 } }];
+
+  if ((text.includes('cartera') || text.includes('cliente')) && text.includes('vendedor')) {
+    return {
+      intent: 'portfolio_by_vendor',
+      queryLabel: 'Cartera por vendedor',
+      filters: {}
+    };
   }
-  if (text.includes('pedido') || text.includes('orden')) {
-    return [{ tool: 'collection_query', input: { collection: 'orders', query: message, limit: 20 } }];
+
+  if ((text.includes('producto') || text.includes('reactivo') || text.includes('insumo')) && (text.includes('rotacion') || text.includes('mas vendido') || text.includes('top'))) {
+    return {
+      intent: 'top_products',
+      queryLabel: 'Productos con mayor rotacion',
+      filters: { period }
+    };
   }
-  if (text.includes('cotiza')) {
-    return [{ tool: 'collection_query', input: { collection: 'quotes', query: message, limit: 20 } }];
+
+  if (text.includes('alerta') || text.includes('operativa') || text.includes('inventario') || text.includes('bodega')) {
+    return {
+      intent: 'operational_alerts',
+      queryLabel: 'Alertas operativas e inventario',
+      filters: {}
+    };
   }
-  if (text.includes('usuario') || text.includes('socio') || text.includes('vendedor')) {
-    return [{ tool: 'collection_query', input: { collection: 'userProfiles', query: message, limit: 20 } }];
-  }
-  return [{ tool: 'collection_query', input: { collection: 'orders', query: message, limit: 20 } }];
+
+  return null;
+}
+
+export function getAssistantSuggestions(): AssistantSuggestion[] {
+  return [
+    {
+      id: 'sales-by-vendor',
+      label: 'Ventas por vendedor',
+      question: 'Muestrame las ventas del mes por vendedor',
+      intent: 'sales_by_vendor'
+    },
+    {
+      id: 'orders-by-status',
+      label: 'Pedidos por estado',
+      question: 'Muestrame los pedidos por estado de esta semana',
+      intent: 'orders_by_status'
+    },
+    {
+      id: 'inactive-clients',
+      label: 'Clientes inactivos',
+      question: 'Que clientes estan inactivos este mes',
+      intent: 'inactive_clients'
+    },
+    {
+      id: 'portfolio-by-vendor',
+      label: 'Cartera por vendedor',
+      question: 'Muestrame la cartera por vendedor',
+      intent: 'portfolio_by_vendor'
+    },
+    {
+      id: 'top-products',
+      label: 'Productos top',
+      question: 'Cuales son los productos con mayor rotacion del mes',
+      intent: 'top_products'
+    },
+    {
+      id: 'operational-alerts',
+      label: 'Alertas operativas',
+      question: 'Muestrame las alertas operativas e inventario',
+      intent: 'operational_alerts'
+    }
+  ];
 }

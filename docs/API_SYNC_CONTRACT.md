@@ -255,14 +255,19 @@ Fecha: 2026-03-01.
 
 ## 9.2) Assistant Chat (admin read-only)
 
-- `POST /api/assistant/chat`
+- `POST /api/admin/assistant/query`
   - Permiso: `admin|root`
   - Modo: solo lectura
   - Entrada:
   ```json
   {
-    "message": "muéstrame los pedidos pendientes de hoy",
-    "sessionId": "optional-session"
+    "question": "Muéstrame las ventas del mes por vendedor",
+    "context": {
+      "scope": "admin",
+      "userRole": "admin",
+      "page": "admin-dashboard",
+      "requestedAt": "2026-03-13T20:00:00.000Z"
+    }
   }
   ```
   - Salida:
@@ -270,22 +275,33 @@ Fecha: 2026-03-01.
   {
     "success": true,
     "data": {
-      "answer": "Resumen ejecutivo...",
-      "toolCalls": [],
-      "table": {
-        "columns": ["orderNumber", "status"],
-        "rows": []
-      },
-      "meta": {
-        "requestId": "uuid",
-        "sources": ["orders"],
-        "totalRows": 10
-      }
+      "answer": "Las ventas del mes muestran a Vendedor 1 liderando.",
+      "queryLabel": "Ventas del mes por vendedor",
+      "visualization": "table",
+      "columns": ["vendedor", "ventas"],
+      "rows": [],
+      "requestId": "uuid"
     }
   }
   ```
-  - El backend usa OpenClaw si está disponible y fallback heurístico si falla.
-  - El asistente no puede ejecutar mutaciones.
+  - Intents soportados:
+    - `sales_by_period`
+    - `sales_by_vendor`
+    - `orders_by_status`
+    - `inactive_clients`
+    - `portfolio_by_vendor`
+    - `top_products`
+    - `operational_alerts`
+  - Guardrails:
+    - no SQL libre
+    - solo lectura
+    - `UNSUPPORTED_QUERY` para consultas fuera del dominio permitido
+
+- `GET /api/admin/assistant/suggestions`
+  - Devuelve prompts sugeridos por dominio.
+
+- `GET /api/admin/assistant/history`
+  - Devuelve historial reciente de preguntas administrativas.
 
 ## 10) Healthchecks
 - `GET /api/health`:
